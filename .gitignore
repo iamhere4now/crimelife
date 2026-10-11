@@ -7,3 +7,7 @@ artifact/out
 # local copies (the source zip, and the claude.ai build already kept as cloudflare/index.html)
 naija-detective-source.zip
 naija-detective.html
+
+# Cloudflare local dev
+.wrangler
+.dev.vars

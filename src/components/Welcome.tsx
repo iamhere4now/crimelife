@@ -1,5 +1,6 @@
 "use client";
 
+import { isCloudflareRuntime } from "@/lib/cfRuntime";
 import { ChevronRight, LogIn, UserPlus } from "lucide-react";
 import { useState } from "react";
 import { moneyShort } from "@/lib/format";
@@ -12,7 +13,7 @@ import { BrandMark } from "./ui";
 
 interface Props {
   profiles: DetectiveProfile[];
-  onSignUp: (name: string, look: number) => void;
+  onSignUp: (name: string, look: number, contact: { fullName: string; email: string }) => void;
   onSignIn: (id: string) => void;
   onGuest: () => void;
 }
@@ -25,8 +26,13 @@ interface Props {
 export function Welcome({ profiles, onSignUp, onSignIn, onGuest }: Props) {
   const [tab, setTab] = useState<"up" | "in">(profiles.length ? "in" : "up");
   const [name, setName] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
   const [look, setLook] = useState(0);
   const trimmed = name.trim();
+  const fullOk = fullName.trim().split(/\s+/).filter(Boolean).length >= 2;
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim());
+  const ready = !!trimmed && fullOk && emailOk;
 
   const switchTab = (t: "up" | "in") => {
     sfx.tap();
@@ -68,13 +74,39 @@ export function Welcome({ profiles, onSignUp, onSignIn, onGuest }: Props) {
           className="mt-5 flex flex-col gap-4"
           onSubmit={(e) => {
             e.preventDefault();
-            if (!trimmed) return;
+            if (!ready) return;
             sfx.success();
-            onSignUp(trimmed, look);
+            onSignUp(trimmed, look, { fullName: fullName.trim().replace(/\s+/g, " ").slice(0, 80), email: email.trim().toLowerCase().slice(0, 120) });
           }}
         >
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-bold uppercase tracking-wide text-muted">Wetin we go call you?</span>
+            <span className="text-xs font-bold uppercase tracking-wide text-muted">Your full name</span>
+            <input
+              value={fullName}
+              maxLength={80}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="e.g. Adaeze Okafor"
+              autoComplete="name"
+              className={`h-12 rounded-xl border bg-night px-4 text-base text-fg placeholder:text-muted focus:border-kick focus:outline-none ${fullName && !fullOk ? "border-danger" : "border-line"}`}
+            />
+            {fullName && !fullOk && <span className="text-[11px] font-semibold text-danger">Please write your first name and surname.</span>}
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-bold uppercase tracking-wide text-muted">Your email</span>
+            <input
+              type="email"
+              value={email}
+              maxLength={120}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              autoComplete="email"
+              inputMode="email"
+              className={`h-12 rounded-xl border bg-night px-4 text-base text-fg placeholder:text-muted focus:border-kick focus:outline-none ${email && !emailOk ? "border-danger" : "border-line"}`}
+            />
+            {email && !emailOk && <span className="text-[11px] font-semibold text-danger">That email doesn&apos;t look right.</span>}
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-bold uppercase tracking-wide text-muted">Detective name (shown to other players)</span>
             <input
               id="detective-name"
               value={name}
@@ -107,12 +139,15 @@ export function Welcome({ profiles, onSignUp, onSignIn, onGuest }: Props) {
           </fieldset>
           <button
             type="submit"
-            disabled={!trimmed}
+            disabled={!ready}
             className="h-12 rounded-full bg-kick font-extrabold text-ink shadow-[0_10px_24px_-14px_rgba(20,22,27,0.6)] transition enabled:active:scale-95 disabled:bg-raise disabled:text-muted disabled:shadow-none"
           >
-            {trimmed ? `Oya, join Panti as Constable ${trimmed.split(" ")[0]}!` : "Type your name first"}
+            {ready ? `Oya, join Panti as Constable ${trimmed.split(" ")[0]}!` : !fullOk ? "Type your full name first" : !emailOk ? "Add your email" : "Pick a detective name"}
           </button>
-          <p className="text-center text-xs text-muted">You start as a Constable with {moneyShort(250_000)}. No password needed: your detectives stay with your Claude account.</p>
+          <p className="text-center text-[11px] leading-snug text-muted">
+            Your full name and email are private: other players only see your detective name. The game&apos;s owner may email you about Naija Detective. We don&apos;t share them.
+          </p>
+          <p className="text-center text-xs text-muted">You start as a Constable with {moneyShort(250_000)}. No password needed: {isCloudflareRuntime() ? "your detectives are saved to this device and our server." : "your detectives stay with your Claude account."}</p>
         </form>
       ) : (
         <div className="mt-5 flex flex-col gap-2">

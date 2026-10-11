@@ -17,15 +17,38 @@ npm run build:artifact -- <out.html>   # one self-contained page (React from cdn
 
 Republish that file to the same artifact URL, with capabilities `{db: {rules: [{path: "chat", read: "view", write: "owner"}, {path: "chat/{self}", write: "interact"}, adsubmit…, adlive…, adsettings…, {path: "board", read: "view", write: "owner"}, {path: "board/{self}", read: "view", write: "interact"}, {path: "adstats", read: "view", write: "owner"}, {path: "adstats/{self}", read: "view", write: "interact"}, {path: "hunts", read: "view", write: "admin"}]}, user: {}, sample: {}, room: {}}` (the full list is in the published artifact). `board/<id>` is each player's public leaderboard row and `adstats/<id>` their poster view and tap counts`. Friends you share the game with need **Editor** access (or Contributor, on a team plan) to post in the chat or keep a cloud save; viewers can only read. Inside the artifact, progress also saves to the player's private `data/users/<id>/save` document (`src/lib/cloudSave.ts`), so it follows them between devices. Outside claude.ai that sync does nothing.
 
-## Host it on Cloudflare
+## Host it on Cloudflare (with its own database and storage)
 
-The game builds into one static page, `cloudflare/index.html` (`npm run build:cloudflare`). `wrangler.jsonc` points Cloudflare at that folder.
+On Cloudflare the game runs on your own account, not on claude.ai.
 
-- **Workers & Pages → Import a repository** (Workers Builds): set **Build command** to `npm run build:cloudflare` and **Deploy command** to `npx wrangler deploy`.
-- **Pages (Git)**: set **Framework preset** to None, **Build command** to `npm run build:cloudflare` and **Build output directory** to `cloudflare`.
-- **Pages (Direct upload)**: drag the `cloudflare` folder in.
+| Part | Where it lives |
+| --- | --- |
+| The game page | `cloudflare/index.html`, built by `npm run build:cloudflare` |
+| The backend | `worker/index.ts`, one Worker |
+| Database: saves, leaderboard, chat, posters, hunts, stats, sign-ups | **D1** `crimelife` |
+| Poster images | **R2** bucket `crimelife-media`, served at `/media/...` |
+| Co-op rooms, who's online, live list updates | **Durable Objects** (`Room`) |
+| Senior Inspector questions | Claude API, if you set `ANTHROPIC_API_KEY`; otherwise scripted tips |
 
-Off claude.ai the game plays fully, but saves stay in each player's browser. The shared features (leaderboard, co-op, chat, cloud save, posters and hunts, Claude's answers) need the claude.ai runtime.
+`src/lib/cfRuntime.ts` gives the game the same small `window.claude` interface it uses on claude.ai, backed by the Worker. That means the rest of the game is unchanged.
+
+**Players:** each one gets an anonymous id and secret token, kept in their browser. Sign-up asks for **full name and email**. They're stored privately in `signups/<player>`, and only the player and the owner can read them. The owner sees the list, with **Copy emails** and **Download CSV**, in Ad manager.
+
+**Owner:** opens Advertise → "Owner? Sign in to the Ad manager" and types the `ADMIN_KEY` password.
+
+**One-time setup:**
+```bash
+npx wrangler login
+npx wrangler d1 create crimelife          # paste the database_id into wrangler.jsonc
+npx wrangler r2 bucket create crimelife-media
+npx wrangler secret put ADMIN_KEY         # your owner password
+npx wrangler secret put ANTHROPIC_API_KEY # optional
+npm run build:cloudflare && npx wrangler deploy
+```
+
+**Deploying from Git** (Workers Builds): set **Build command** to `npm run build:cloudflare` and **Deploy command** to `npx wrangler deploy`.
+
+**Local test:** copy `.dev.vars.example` to `.dev.vars`, then run `npx wrangler dev`. The database, storage and rooms are simulated on your computer.
 
 ## How it plays
 

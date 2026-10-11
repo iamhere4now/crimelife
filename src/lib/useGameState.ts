@@ -136,6 +136,8 @@ function normalizeStore(raw: unknown): SaveStore {
         name: p.name.slice(0, 24),
         look: Number(p.look) || 0,
         face: typeof p.face === "string" ? p.face.slice(0, 16) : undefined,
+        fullName: typeof p.fullName === "string" ? p.fullName.slice(0, 80) : undefined,
+        email: typeof p.email === "string" ? p.email.slice(0, 120) : undefined,
         createdAt: Number(p.createdAt) || 0,
         state: normalizeState(p.state),
       };
@@ -584,10 +586,10 @@ export function useGameState() {
   /* ---------- detectives on this account ---------- */
 
   const signUp = useCallback(
-    (name: string, look: number) => {
+    (name: string, look: number, contact?: { fullName: string; email: string }) => {
       const st = storeRef.current;
       const id = `d${Date.now().toString(36)}`;
-      const profile: DetectiveProfile = { id, name: name.trim().slice(0, 24), look, createdAt: Date.now(), state: { ...initialState } };
+      const profile: DetectiveProfile = { id, name: name.trim().slice(0, 24), look, fullName: contact?.fullName, email: contact?.email, createdAt: Date.now(), state: { ...initialState } };
       replaceStore({ ...st, activeId: id, profiles: { ...st.profiles, [id]: profile } });
     },
     [replaceStore],

@@ -302,6 +302,9 @@ export interface DetectiveProfile {
   look: number;
   /** The look the player designed in the editor, as a face code (lib/looks); wins over `look`. */
   face?: string;
+  /** Collected at sign-up: kept private (only the player and the game's owner). */
+  fullName?: string;
+  email?: string;
   createdAt: number;
   state: GameState;
 }

@@ -1,0 +1,3 @@
+# Local test values for `wrangler dev` only (copy to .dev.vars). Real ones: `npx wrangler secret put ADMIN_KEY`
+ADMIN_KEY=local-test-owner
+# ANTHROPIC_API_KEY=

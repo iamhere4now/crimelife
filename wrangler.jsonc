@@ -1,10 +1,38 @@
-// Cloudflare deploy settings: the game is one static page, built by `npm run build:cloudflare`
-// into ./cloudflare. Used by `npx wrangler deploy` (Workers & Pages, "Import a repository").
+// Naija Detective on Cloudflare.
+//
+//   - the game page:      ./cloudflare (built by `npm run build:cloudflare`)
+//   - the backend:        worker/index.ts (database API, poster images, live rooms)
+//   - the database (D1):  "crimelife"           -> create it, then paste its id below
+//   - poster images (R2): "crimelife-media"     -> create the bucket (or remove that block
+//                                                  to keep images inside the database)
+//   - owner password:     `npx wrangler secret put ADMIN_KEY`
+//   - optional AI:        `npx wrangler secret put ANTHROPIC_API_KEY`
 {
   "name": "crimelife",
+  "main": "worker/index.ts",
   "compatibility_date": "2026-10-01",
   "assets": {
     "directory": "./cloudflare",
-    "not_found_handling": "single-page-application"
-  }
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/media/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "crimelife",
+      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "MEDIA",
+      "bucket_name": "crimelife-media"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "ROOMS", "class_name": "Room" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }],
+  "observability": { "enabled": true }
 }

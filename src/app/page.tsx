@@ -43,6 +43,7 @@ import { today, useGameState } from "@/lib/useGameState";
 import { BADGE_BY_ID, earnedBadges } from "@/lib/badges";
 import { countTap, publishBoard } from "@/lib/board";
 import { DailyCard } from "@/components/DailyCard";
+import { saveSignup } from "@/lib/signups";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 const OPEN_KEY = "crime-life:open-case";
@@ -330,8 +331,9 @@ export default function Home() {
     return (
       <Welcome
         profiles={Object.values(game.store.profiles).sort((a, b) => b.createdAt - a.createdAt)}
-        onSignUp={(name, look) => {
-          game.signUp(name, look);
+        onSignUp={(name, look, contact) => {
+          game.signUp(name, look, contact);
+          void saveSignup({ detective: name, ...contact });
           setTab("cases");
           notify(`Welcome to Panti, Constable ${name.split(" ")[0]}! Oya, go catch thief.`, "good");
         }}

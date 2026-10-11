@@ -2,8 +2,9 @@
 //
 //   npm run build:cloudflare        -> cloudflare/index.html
 //
-// It is the claude.ai single-file build plus what a page needs on its own:
-// a doctype and a phone viewport (claude.ai adds those around artifacts).
+// It is the single-file game with its online features pointed at the Worker
+// (worker/index.ts), plus what a page needs on its own: a doctype and a phone
+// viewport (claude.ai adds those around artifacts).
 
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -14,7 +15,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const raw = resolve(root, "artifact/out/standalone-raw.html");
 const out = resolve(root, "cloudflare/index.html");
 
-execFileSync(process.execPath, [resolve(root, "artifact/build.mjs"), raw], { stdio: "inherit" });
+execFileSync(process.execPath, [resolve(root, "artifact/build.mjs"), raw], { stdio: "inherit", env: { ...process.env, ND_ENTRY: "artifact/main-cloudflare.tsx" } });
 
 const body = readFileSync(raw, "utf8").replace(/^<meta charset="utf-8">\s*/i, "");
 const head = [

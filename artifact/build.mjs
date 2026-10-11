@@ -46,7 +46,8 @@ const reactGlobals = {
 };
 
 const js = await build({
-  entryPoints: [resolve(root, "artifact/main.tsx")],
+  // ND_ENTRY picks another entry (the Cloudflare build uses artifact/main-cloudflare.tsx)
+  entryPoints: [resolve(root, process.env.ND_ENTRY ?? "artifact/main.tsx")],
   bundle: true,
   minify: true,
   format: "iife",

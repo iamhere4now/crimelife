@@ -10,6 +10,7 @@ import {
   MAX_BOARDS,
   cleanUrl,
   adStore,
+  resetAdStore,
   DEFAULT_SETTINGS,
   drawPoster,
   edgeColour,
@@ -31,6 +32,8 @@ import { CITIES, CITY_BY_ID } from "@/lib/cities";
 import { money } from "@/lib/format";
 import { sfx } from "@/lib/SoundEffects";
 import { readAdStats, type AdCount } from "@/lib/board";
+import { checkOwner, isCloudflareRuntime, setAdminKey } from "@/lib/cfRuntime";
+import { listSignups, signupsCsv, type Signup } from "@/lib/signups";
 
 type Tab = "new" | "mine" | "manage";
 
@@ -46,6 +49,8 @@ export function AdsSheet({ onClose, startTab = "new" }: { onClose: () => void; s
   // "Renew" on one of my posters: start a new one pre-filled from it
   const [renewing, setRenewing] = useState<AdSubmission | null>(null);
 
+  // the Cloudflare build: the owner signs in with their ADMIN_KEY to open the Ad manager
+  const [round, setRound] = useState(0);
   useEffect(() => {
     let live = true;
     adStore().then(async (s) => {
@@ -57,7 +62,7 @@ export function AdsSheet({ onClose, startTab = "new" }: { onClose: () => void; s
     return () => {
       live = false;
     };
-  }, []);
+  }, [round]);
 
   const tabs: { id: Tab; label: string }[] = [
     { id: "new", label: "New poster" },
@@ -118,6 +123,16 @@ export function AdsSheet({ onClose, startTab = "new" }: { onClose: () => void; s
           />
         ) : (
           <Manager store={store} settings={settings} onSettings={setSettings} />
+        )}
+
+        {store && store.mode === "shared" && !store.isOwner && isCloudflareRuntime() && (
+          <OwnerSignIn
+            onDone={() => {
+              resetAdStore();
+              setStore(null);
+              setRound((r) => r + 1);
+            }}
+          />
         )}
 
         {store?.mode === "local" && (
@@ -727,6 +742,7 @@ function Manager({ store, settings, onSettings }: { store: AdStore; settings: Ad
 
   return (
     <div className="mt-4 space-y-5">
+      {isCloudflareRuntime() && <Signups />}
       <div className="grid grid-cols-3 gap-2 text-center">
         {[
           ["To review", pending.length],
@@ -865,5 +881,123 @@ function Manager({ store, settings, onSettings }: { store: AdStore; settings: Ad
         </button>
       </section>
     </div>
+  );
+}
+
+/* ---------------------------------------------------------------- owner sign-in (Cloudflare build) */
+
+function OwnerSignIn({ onDone }: { onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [key, setKey] = useState("");
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+  if (!open)
+    return (
+      <button onClick={() => setOpen(true)} className="mx-auto mt-5 block text-[11px] font-semibold text-muted underline">
+        Owner? Sign in to the Ad manager
+      </button>
+    );
+  return (
+    <form
+      className="mt-5 rounded-2xl bg-card p-3"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setBusy(true);
+        setAdminKey(key);
+        const r = await checkOwner();
+        setBusy(false);
+        if (r.owner) {
+          setMsg("");
+          sfx.success();
+          onDone();
+        } else {
+          setAdminKey(null);
+          setMsg(r.ownerSet ? "That owner password is not right." : "No owner password is set on the server yet. Set ADMIN_KEY on your Cloudflare Worker first.");
+        }
+      }}
+    >
+      <label className="text-xs font-bold">Owner password</label>
+      <div className="mt-1.5 flex gap-2">
+        <input type="password" value={key} onChange={(e) => setKey(e.target.value)} autoComplete="current-password" className="h-10 min-w-0 flex-1 rounded-xl bg-raise px-3 text-sm focus:outline-none" aria-label="Owner password" />
+        <button disabled={!key || busy} className="h-10 rounded-xl bg-fg px-4 text-xs font-bold text-white disabled:opacity-50">
+          {busy ? "Checking…" : "Sign in"}
+        </button>
+      </div>
+      {msg && <p className="mt-1.5 text-[11px] font-semibold text-danger">{msg}</p>}
+      <p className="mt-1.5 text-[11px] text-muted">The password you set as ADMIN_KEY on your Cloudflare Worker. It stays on this device.</p>
+    </form>
+  );
+}
+
+/* ---------------------------------------------------------------- the owner's list of sign-ups (Cloudflare build) */
+
+function Signups() {
+  const [list, setList] = useState<Signup[] | null>(null);
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState("");
+  useEffect(() => {
+    listSignups().then((l) => setList(l ?? []), () => setList([]));
+  }, []);
+  const download = () => {
+    if (!list?.length) return;
+    const url = URL.createObjectURL(new Blob(["﻿" + signupsCsv(list)], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `naija-detective-signups-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+  };
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText([...new Set((list ?? []).map((s) => s.email))].join(", "));
+      setNote("Emails copied.");
+    } catch {
+      setNote("Couldn't copy here: use Download instead.");
+    }
+  };
+  return (
+    <section className="soft rounded-2xl bg-card p-3">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-bold">👥 Players who signed up {list ? `(${list.length})` : ""}</h3>
+        <div className="flex gap-1.5">
+          <button onClick={copy} disabled={!list?.length} className="h-8 rounded-full border border-line px-3 text-[11px] font-bold disabled:opacity-40">
+            Copy emails
+          </button>
+          <button onClick={download} disabled={!list?.length} className="h-8 rounded-full bg-fg px-3 text-[11px] font-bold text-white disabled:opacity-40">
+            Download CSV
+          </button>
+        </div>
+      </div>
+      {note && <p className="mt-1 text-[11px] text-muted">{note}</p>}
+      {!list ? (
+        <p className="mt-2 text-xs text-muted">Loading…</p>
+      ) : !list.length ? (
+        <p className="mt-2 text-xs text-neutral-600">No sign-ups yet.</p>
+      ) : (
+        <>
+          <ul className="mt-2 divide-y divide-line text-xs">
+            {(open ? list : list.slice(0, 5)).map((s, i) => (
+              <li key={s.player + i} className="flex items-center justify-between gap-2 py-1.5">
+                <span className="min-w-0">
+                  <span className="block truncate font-semibold">{s.fullName || "(no name)"}</span>
+                  <span className="block truncate text-muted">{s.email}</span>
+                </span>
+                <span className="shrink-0 text-right text-[10px] text-muted">
+                  {s.detective}
+                  <br />
+                  {s.at ? dateOf(s.at) : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {list.length > 5 && (
+            <button onClick={() => setOpen((o) => !o)} className="mt-1 text-[11px] font-bold text-muted underline">
+              {open ? "Show fewer" : `Show all ${list.length}`}
+            </button>
+          )}
+        </>
+      )}
+      <p className="mt-2 text-[10px] text-muted">Private: only you (signed in as owner) can see this list.</p>
+    </section>
   );
 }

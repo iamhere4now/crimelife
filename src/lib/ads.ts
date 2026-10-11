@@ -308,13 +308,16 @@ export interface AdStore {
   watchHunts(cb: (hunts: Hunt[]) => void): Unsub;
 }
 
+/** A poster picture: inline JPEG (claude.ai), or a /media/ link to R2 (the Cloudflare backend). */
+const imageOk = (s: string) => s.startsWith("data:image/jpeg;base64,") || /^\/media\/[A-Za-z0-9/._-]+$/.test(s);
+
 const str = (v: unknown, n: number) => (typeof v === "string" ? v.slice(0, n) : "");
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 const PLACEMENTS = new Set(["billboard", "signboard", "banner", "poster"]);
 
 function toSubmission(id: string, by: string, d: Record<string, unknown>): AdSubmission | null {
   const image = str(d.image, 260_000);
-  if (!image.startsWith("data:image/jpeg;base64,") || !PLACEMENTS.has(String(d.placement))) return null;
+  if (!imageOk(image) || !PLACEMENTS.has(String(d.placement))) return null;
   return {
     id,
     by,
@@ -350,7 +353,7 @@ function toHuntOffer(v: unknown): HuntOffer | undefined {
 function toHunt(id: string, d: Record<string, unknown>): Hunt | null {
   const image = str(d.image, 260_000);
   const offer = toHuntOffer(d);
-  if (!offer || !image.startsWith("data:image/jpeg;base64,") || !PLACEMENTS.has(String(d.placement))) return null;
+  if (!offer || !imageOk(image) || !PLACEMENTS.has(String(d.placement))) return null;
   const phone = str(d.phone, 16).replace(/\D/g, "");
   return {
     id,
@@ -393,7 +396,7 @@ export function setHuntCasePicker(fn: (city: AdCity, seed: string) => string) {
 
 function toLive(id: string, d: Record<string, unknown>): LiveAd | null {
   const image = str(d.image, 260_000);
-  if (!image.startsWith("data:image/jpeg;base64,") || !PLACEMENTS.has(String(d.placement))) return null;
+  if (!imageOk(image) || !PLACEMENTS.has(String(d.placement))) return null;
   const phone = str(d.phone, 16).replace(/\D/g, "");
   return {
     id,
@@ -615,6 +618,11 @@ async function waitForRuntime(ms: number): Promise<Runtime | null> {
  * computer does it fall back to the browser. Resolves null (with `adProblem` set)
  * when the shared database can't be reached; the next call tries again.
  */
+/** Forget the cached store (after the owner signs in on the Cloudflare build). */
+export function resetAdStore() {
+  storePromise = null;
+}
+
 export function adStore(): Promise<AdStore | null> {
   storePromise ??= (async () => {
     const rt = await waitForRuntime(isDev() ? 400 : 6000);
