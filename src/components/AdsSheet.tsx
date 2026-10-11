@@ -862,6 +862,15 @@ function Manager({ store, settings, onSettings }: { store: AdStore; settings: Ad
             className="rounded-xl bg-raise px-3 py-2 text-sm text-fg focus:outline-none"
           />
         </label>
+        <label className="mt-3 flex flex-col gap-1 text-[11px] font-semibold text-muted">
+          Support contact for players (shown on &ldquo;Forgot password?&rdquo;)
+          <input
+            value={draft.support ?? ""}
+            onChange={(e) => setDraft({ ...draft, support: e.target.value.slice(0, 160) })}
+            placeholder="e.g. WhatsApp 0803 000 0000 or help@yourgame.com"
+            className="h-10 rounded-xl bg-raise px-3 text-sm text-fg focus:outline-none"
+          />
+        </label>
         <label className="mt-3 flex items-center gap-2 text-sm">
           <input type="checkbox" checked={draft.open} onChange={(e) => setDraft({ ...draft, open: e.target.checked })} className="size-4 accent-[#14161b]" />
           Accept new posters

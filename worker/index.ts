@@ -2,6 +2,7 @@
  * Naija Detective on Cloudflare: the backend that replaces the claude.ai runtime.
  *
  *   /api/auth             make a player (anonymous id + secret token, kept in their browser)
+ *   /api/account/...      email + password accounts: register, login (any device), password, logout
  *   /api/me               who am I, and am I the owner (admin key)
  *   /api/doc?path=        get / put / delete one document          (D1)
  *   /api/col?path=        list the documents in a collection       (D1)
@@ -59,6 +60,8 @@ function schema(env: Env) {
     env.DB.prepare("CREATE TABLE IF NOT EXISTS limits (key TEXT PRIMARY KEY, n INTEGER NOT NULL, reset INTEGER NOT NULL)").bind(),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS tickets (ticket TEXT PRIMARY KEY, uid TEXT NOT NULL, exp INTEGER NOT NULL)").bind(),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS bans (uid TEXT PRIMARY KEY, at INTEGER NOT NULL, note TEXT)").bind(),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS accounts (email TEXT PRIMARY KEY, uid TEXT NOT NULL UNIQUE, pw_hash TEXT NOT NULL, salt TEXT NOT NULL, iters INTEGER NOT NULL, full_name TEXT, created INTEGER NOT NULL, changed INTEGER NOT NULL)").bind(),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, uid TEXT NOT NULL, created INTEGER NOT NULL)").bind(),
   ]).catch((e) => {
     ready = null;
     throw e;
@@ -106,8 +109,14 @@ async function caller(req: Request, env: Env): Promise<{ uid: string; owner: boo
   const raw = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
   const [uid, token] = raw.split(".");
   if (!uid || !token || !/^[a-z0-9]{8,40}$/.test(uid) || token.length > 80) return null;
+  const hashed = await sha256(token);
   const row = await env.DB.prepare("SELECT token_hash FROM players WHERE uid = ?").bind(uid).first<{ token_hash: string }>();
-  if (!row || !sameText(row.token_hash, await sha256(token))) return null;
+  if (!row) return null;
+  if (!sameText(row.token_hash, hashed)) {
+    // signed in on another device with email and password
+    const sess = await env.DB.prepare("SELECT uid FROM sessions WHERE token_hash = ?").bind(hashed).first<{ uid: string }>();
+    if (!sess || sess.uid !== uid) return null;
+  }
   // the owner password: 10 wrong tries an hour from one address locks that address out for the hour
   const key = req.headers.get("x-admin-key") ?? "";
   let owner = false;
@@ -120,6 +129,29 @@ async function caller(req: Request, env: Env): Promise<{ uid: string; owner: boo
   }
   const ban = owner ? null : await env.DB.prepare("SELECT 1 AS x FROM bans WHERE uid = ?").bind(uid).first();
   return { uid, owner, banned: !!ban };
+}
+
+/* ---------------------------------------------------------------- passwords */
+
+const PBKDF2_ITERS = 100_000;
+const b64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
+const unb64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+
+/** PBKDF2-SHA-256: a slow, salted one-way hash, so stored passwords can't be read back. */
+async function hashPassword(password: string, salt: Uint8Array, iters = PBKDF2_ITERS) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations: iters }, key, 256);
+  return b64(new Uint8Array(bits));
+}
+
+const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/;
+const goodPassword = (pw: unknown): pw is string => typeof pw === "string" && pw.length >= 8 && pw.length <= 128;
+
+/** A new sign-in token for this player on this device. */
+async function newSession(env: Env, uid: string) {
+  const token = randomId(24);
+  await env.DB.prepare("INSERT INTO sessions (token_hash, uid, created) VALUES (?, ?, ?)").bind(await sha256(token), uid, Date.now()).run();
+  return token;
 }
 
 /* ---------------------------------------------------------------- access rules */
@@ -218,6 +250,22 @@ async function api(req: Request, env: Env, ctx: { waitUntil(p: Promise<unknown>)
     return json({ uid, token });
   }
 
+  /* ---- signing in with email and password (any device) */
+  if (route === "account/login" && req.method === "POST") {
+    const body = (await req.json().catch(() => ({}))) as { email?: unknown; password?: unknown };
+    const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+    if (!EMAIL.test(email) || typeof body.password !== "string" || body.password.length > 128) return fail("invalid_argument", 400);
+    // guessing: 20 tries an hour from one address, 10 an hour on one email
+    if (!(await allow(env, `login:ip:${ipOf(req)}`, 20, 3_600_000)) || !(await allow(env, `login:email:${email}`, 10, 3_600_000))) return fail("rate_limited", 429);
+    const acc = await env.DB.prepare("SELECT uid, pw_hash, salt, iters FROM accounts WHERE email = ?").bind(email).first<{ uid: string; pw_hash: string; salt: string; iters: number }>();
+    // the same answer and about the same work whether or not the email exists
+    const check = await hashPassword(body.password, acc ? unb64(acc.salt) : new Uint8Array(16), acc?.iters ?? PBKDF2_ITERS);
+    if (!acc || !sameText(check, acc.pw_hash)) return fail("wrong_login", 401);
+    const banned = await env.DB.prepare("SELECT 1 AS x FROM bans WHERE uid = ?").bind(acc.uid).first();
+    if (banned) return fail("banned", 403);
+    return json({ uid: acc.uid, token: await newSession(env, acc.uid), email });
+  }
+
   // live rooms: a WebSocket can't send headers, so it brings a one-minute, one-use ticket
   if (route.startsWith("room/")) {
     const name = route.slice(5);
@@ -242,7 +290,25 @@ async function api(req: Request, env: Env, ctx: { waitUntil(p: Promise<unknown>)
       const players = await env.DB.prepare("SELECT COUNT(*) AS n FROM players").bind().first<{ n: number }>();
       const today = await env.DB.prepare("SELECT COUNT(*) AS n FROM players WHERE created > ?").bind(Date.now() - 86_400_000).first<{ n: number }>();
       const bans = await env.DB.prepare("SELECT uid, at, note FROM bans ORDER BY at DESC LIMIT 200").bind().all<{ uid: string; at: number; note: string }>();
-      return json({ players: players?.n ?? 0, newToday: today?.n ?? 0, bans: bans.results, media: !!env.MEDIA, ask: !!env.ANTHROPIC_API_KEY });
+      const accounts = await env.DB.prepare("SELECT COUNT(*) AS n FROM accounts").bind().first<{ n: number }>();
+      return json({ players: players?.n ?? 0, newToday: today?.n ?? 0, accounts: accounts?.n ?? 0, bans: bans.results, media: !!env.MEDIA, ask: !!env.ANTHROPIC_API_KEY });
+    }
+    if (route === "admin/reset-password" && req.method === "POST") {
+      const body = (await req.json().catch(() => ({}))) as { email?: unknown; password?: unknown };
+      const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+      if (!EMAIL.test(email) || !goodPassword(body.password)) return fail("invalid_argument", 400);
+      const acc = await env.DB.prepare("SELECT uid FROM accounts WHERE email = ?").bind(email).first<{ uid: string }>();
+      if (!acc) return fail("not_found", 404);
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      await env.DB.batch([
+        env.DB.prepare("UPDATE accounts SET pw_hash = ?, salt = ?, iters = ?, changed = ? WHERE email = ?").bind(await hashPassword(body.password, salt), b64(salt), PBKDF2_ITERS, Date.now(), email),
+        env.DB.prepare("DELETE FROM sessions WHERE uid = ?").bind(acc.uid),
+      ]);
+      return json({ ok: true });
+    }
+    if (route === "admin/accounts") {
+      const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM accounts").bind().first<{ n: number }>();
+      return json({ accounts: n?.n ?? 0 });
     }
     if (route === "admin/ban" && req.method === "POST") {
       const body = (await req.json().catch(() => ({}))) as { uid?: unknown; ban?: unknown; wipe?: unknown; note?: unknown };
@@ -275,7 +341,53 @@ async function api(req: Request, env: Env, ctx: { waitUntil(p: Promise<unknown>)
     return json({ ticket });
   }
 
-  if (route === "me") return json({ uid: who.uid, owner: who.owner, ownerSet: !!env.ADMIN_KEY });
+  if (route === "me") {
+    const acc = await env.DB.prepare("SELECT email FROM accounts WHERE uid = ?").bind(who.uid).first<{ email: string }>();
+    return json({ uid: who.uid, owner: who.owner, ownerSet: !!env.ADMIN_KEY, email: acc?.email ?? null });
+  }
+
+  /* ---- email + password for this player (their progress stays with them) */
+  if (route === "account/register" && req.method === "POST") {
+    if (!(await allow(env, `register:${ipOf(req)}`, 10, 3_600_000))) return fail("rate_limited", 429);
+    const body = (await req.json().catch(() => ({}))) as { email?: unknown; password?: unknown; fullName?: unknown };
+    const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+    if (!EMAIL.test(email)) return fail("bad_email", 400);
+    if (!goodPassword(body.password)) return fail("weak_password", 400);
+    const fullName = typeof body.fullName === "string" ? body.fullName.trim().slice(0, 80) : "";
+    const taken = await env.DB.prepare("SELECT uid FROM accounts WHERE email = ?").bind(email).first<{ uid: string }>();
+    if (taken) return fail("email_taken", 409);
+    const mine = await env.DB.prepare("SELECT email FROM accounts WHERE uid = ?").bind(who.uid).first();
+    if (mine) return fail("already_registered", 409);
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const now = Date.now();
+    await env.DB.prepare("INSERT INTO accounts (email, uid, pw_hash, salt, iters, full_name, created, changed) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .bind(email, who.uid, await hashPassword(body.password, salt), b64(salt), PBKDF2_ITERS, fullName, now, now)
+      .run();
+    return json({ ok: true, email });
+  }
+
+  if (route === "account/password" && req.method === "POST") {
+    const body = (await req.json().catch(() => ({}))) as { old?: unknown; password?: unknown };
+    if (!goodPassword(body.password) || typeof body.old !== "string") return fail("weak_password", 400);
+    if (!(await allow(env, `pwchange:${who.uid}`, 10, 3_600_000))) return fail("rate_limited", 429);
+    const acc = await env.DB.prepare("SELECT email, pw_hash, salt, iters FROM accounts WHERE uid = ?").bind(who.uid).first<{ email: string; pw_hash: string; salt: string; iters: number }>();
+    if (!acc) return fail("not_found", 404);
+    if (!sameText(await hashPassword(body.old, unb64(acc.salt), acc.iters), acc.pw_hash)) return fail("wrong_login", 401);
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    await env.DB.batch([
+      env.DB.prepare("UPDATE accounts SET pw_hash = ?, salt = ?, iters = ?, changed = ? WHERE uid = ?").bind(await hashPassword(body.password, salt), b64(salt), PBKDF2_ITERS, Date.now(), who.uid),
+      // sign out every other device
+      env.DB.prepare("DELETE FROM sessions WHERE uid = ?").bind(who.uid),
+    ]);
+    return json({ ok: true, token: await newSession(env, who.uid) });
+  }
+
+  if (route === "account/logout" && req.method === "POST") {
+    const raw = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
+    const token = raw.split(".")[1] ?? "";
+    await env.DB.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(await sha256(token)).run();
+    return json({ ok: true });
+  }
 
   if (route === "ask" && req.method === "POST") return ask(req, env, who.uid, ipOf(req));
 

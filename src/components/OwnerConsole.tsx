@@ -13,6 +13,7 @@ type Db = { collection(p: string): { get(): Promise<{ docs: Snap[] }> }; doc(p: 
 interface Overview {
   players: number;
   newToday: number;
+  accounts?: number;
   bans: { uid: string; at: number; note: string }[];
   media: boolean;
   ask: boolean;
@@ -101,7 +102,7 @@ export function OwnerConsole({ onClose, onAds, onGrant }: { onClose: () => void;
               {[
                 ["Players", over?.players ?? "…"],
                 ["New today", over?.newToday ?? "…"],
-                ["On leaderboard", board.length],
+                ["With password", over?.accounts ?? "…"],
                 ["Banned", over?.bans.length ?? "…"],
               ].map(([label, v]) => (
                 <div key={label as string} className="soft rounded-2xl bg-card px-3 py-3 text-center">
@@ -124,6 +125,8 @@ export function OwnerConsole({ onClose, onAds, onGrant }: { onClose: () => void;
             </div>
 
             <Signups />
+
+            <ResetPassword onDone={(t) => setNote(t)} />
 
             {/* leaderboard moderation */}
             <section className="soft rounded-2xl bg-card p-3">
@@ -234,5 +237,53 @@ export function OwnerConsole({ onClose, onAds, onGrant }: { onClose: () => void;
         )}
       </div>
     </div>
+  );
+}
+
+/** "Forgot password?": the owner sets a temporary password for a player's email. */
+function ResetPassword({ onDone }: { onDone: (note: string) => void }) {
+  const [email, setEmail] = useState("");
+  const [temp, setTemp] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const make = () => {
+    const words = ["lagos", "kano", "suya", "danfo", "jollof", "okada", "agege", "zobo", "keke", "gele", "amala", "puff"];
+    const pick = () => words[crypto.getRandomValues(new Uint32Array(1))[0] % words.length];
+    setTemp(`${pick()}-${pick()}-${1000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 9000)}`);
+  };
+  return (
+    <section className="soft rounded-2xl bg-card p-3">
+      <h3 className="text-sm font-bold">🔑 Reset a player&apos;s password</h3>
+      <p className="text-[11px] text-muted">For players who forgot theirs. Set a temporary password, send it to them privately, and tell them to change it in Profile. Their other devices are signed out.</p>
+      <form
+        className="mt-2 flex flex-col gap-2"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setBusy(true);
+          setErr("");
+          try {
+            await adminCall("reset-password", { email: email.trim().toLowerCase(), password: temp });
+            onDone(`Password reset for ${email.trim().toLowerCase()}. Send them the temporary password: ${temp}`);
+            setEmail("");
+            setTemp("");
+          } catch (e2) {
+            setErr((e2 as { code?: string }).code === "not_found" ? "No account with that email." : "Couldn't reset. Check the email and use 8+ characters.");
+          }
+          setBusy(false);
+        }}
+      >
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Player's email" className="h-10 rounded-xl bg-raise px-3 text-sm focus:outline-none" aria-label="Player's email" />
+        <div className="flex gap-2">
+          <input value={temp} onChange={(e) => setTemp(e.target.value)} placeholder="Temporary password (8+)" className="h-10 min-w-0 flex-1 rounded-xl bg-raise px-3 font-mono text-sm focus:outline-none" aria-label="Temporary password" />
+          <button type="button" onClick={make} className="h-10 rounded-xl border border-line px-3 text-xs font-bold">
+            Make one
+          </button>
+        </div>
+        {err && <p className="text-xs font-semibold text-danger">{err}</p>}
+        <button disabled={busy || !email || temp.length < 8} className="h-10 rounded-full bg-fg text-xs font-bold text-white disabled:opacity-50">
+          {busy ? "Resetting…" : "Reset password"}
+        </button>
+      </form>
+    </section>
   );
 }

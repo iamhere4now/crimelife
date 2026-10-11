@@ -34,6 +34,14 @@ On Cloudflare the game runs on your own account, not on claude.ai.
 
 **Players:** each one gets an anonymous id and secret token, kept in their browser. Sign-up asks for **full name and email**. They're stored privately in `signups/<player>`, and only the player and the owner can read them. The owner sees the list, with **Copy emails** and **Download CSV**, in Ad manager.
 
+**Player accounts:**
+- **Sign-up:** asks for full name, email, password (8+ characters) and a detective name.
+- **Sign-in:** with email and password on any device; the player's detectives come with them through the cloud save.
+- **Storage:** passwords are stored only as salted PBKDF2-SHA-256 hashes (100,000 rounds) in D1 `accounts`. Each device signed in by email gets its own session in `sessions`.
+- **Guessing:** sign-in allows 20 tries an hour per address and 10 an hour per email. Wrong email and wrong password get the same answer.
+- **Profile → Account:** shows the email, Change password (which signs out other devices) and Sign out. Sign-out saves progress to the account, then clears it from the device, so shared phones are safe. Older players can add an email and password there.
+- **Forgot password?** shows your support contact (set in Ad manager settings). You reset it in the Owner console, under "Reset a player's password", and send them the temporary one.
+
 **Owner:** go to the game's address with **`#owner`** on the end (e.g. `https://your-game.example/#owner`) and sign in with the `ADMIN_KEY` password. Nothing in the game links there.
 
 The **Owner console** shows player counts and sign-ups (Copy emails, Download CSV). From it you can open the Ad manager, remove leaderboard rows or chat, and ban or unban players. A ban stops posting, chat, leaderboard and co-op; they can still play alone. It also has test tools: +₦, +XP and Jump to General.

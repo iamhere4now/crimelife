@@ -46,6 +46,7 @@ import { BADGE_BY_ID, earnedBadges } from "@/lib/badges";
 import { countTap, publishBoard } from "@/lib/board";
 import { DailyCard } from "@/components/DailyCard";
 import { saveSignup } from "@/lib/signups";
+import { ACCOUNT_MESSAGES, accountEmail, accountRegister, isCloudflareRuntime } from "@/lib/cfRuntime";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 const OPEN_KEY = "crime-life:open-case";
@@ -346,9 +347,17 @@ export default function Home() {
     return (
       <Welcome
         profiles={Object.values(game.store.profiles).sort((a, b) => b.createdAt - a.createdAt)}
-        onSignUp={(name, look, contact) => {
-          game.signUp(name, look, contact);
-          void saveSignup({ detective: name, ...contact });
+        onSignUp={async (name, look, contact) => {
+          // the game's own site: an email + password account first, so progress can follow the player
+          if (isCloudflareRuntime() && contact.password) {
+            const problem = await accountRegister(contact.email, contact.password, contact.fullName);
+            if (problem === "already_registered") {
+              const mine = await accountEmail();
+              if (mine !== contact.email) return `This device is signed in as ${mine ?? "another account"}. Sign out in Profile first to make a new account.`;
+            } else if (problem) return ACCOUNT_MESSAGES[problem];
+          }
+          game.signUp(name, look, { fullName: contact.fullName, email: contact.email });
+          void saveSignup({ detective: name, fullName: contact.fullName, email: contact.email });
           setTab("cases");
           notify(`Welcome to Panti, Constable ${name.split(" ")[0]}! Oya, go catch thief.`, "good");
         }}
@@ -563,6 +572,7 @@ export default function Home() {
               sfx.tap();
               setAdsOpen(true);
             }}
+            account={{ fullName: active.fullName, email: active.email }}
             onEditLook={() => {
               sfx.whoosh();
               setEditingLook(true);

@@ -7,6 +7,7 @@ import { CASES } from "@/lib/cases";
 import { money } from "@/lib/format";
 import { LOSS_LIMIT, RANKS, rankFor, rankIndex, rankProgress, XP_ARREST, XP_LIE, XP_STAR } from "@/lib/ranks";
 import type { Face, GameState } from "@/lib/types";
+import { AccountCard } from "./AccountCard";
 import { Avatar } from "./Avatar";
 import { Insignia } from "./RankViews";
 import { Stars } from "./ui";
@@ -19,9 +20,11 @@ interface Props {
   onSwitch: () => void;
   onAdvertise: () => void;
   onEditLook: () => void;
+  /** Sign-up details, for the account card (the game's own site). */
+  account?: { fullName?: string; email?: string };
 }
 
-export function ProfileView({ state, name, face, onToggleMute, onSwitch, onAdvertise, onEditLook }: Props) {
+export function ProfileView({ state, name, face, onToggleMute, onSwitch, onAdvertise, onEditLook, account }: Props) {
   const { stats } = state;
   const accuracy = stats.accusations ? Math.round((stats.correct / stats.accusations) * 100) : 0;
   const rank = rankFor(state.xp);
@@ -55,6 +58,8 @@ export function ProfileView({ state, name, face, onToggleMute, onSwitch, onAdver
         <div className={`mt-3 text-3xl font-black tabular-nums ${state.balance < 0 ? "text-danger" : "text-kick neon-text"}`}>{money(state.balance)}</div>
         <div className="text-xs text-muted">Your money</div>
       </div>
+
+      <AccountCard fullName={account?.fullName} email={account?.email} />
 
       {/* advertise on the game's streets */}
       <button onClick={onAdvertise} className="mt-4 flex w-full items-center gap-3 rounded-2xl bg-kick p-4 text-left text-white transition active:scale-[0.98]">

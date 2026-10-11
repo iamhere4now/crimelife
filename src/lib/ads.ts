@@ -131,6 +131,8 @@ export interface AdSettings {
   open: boolean;
   /** Naira per week for adding a sponsored clue hunt to a poster. */
   hunt?: number;
+  /** How players reach the owner (shown on "Forgot password?"): an email or WhatsApp number. */
+  support?: string;
 }
 
 export const DEFAULT_SETTINGS: AdSettings = {

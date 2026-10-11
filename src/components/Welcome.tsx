@@ -1,7 +1,7 @@
 "use client";
 
-import { isCloudflareRuntime } from "@/lib/cfRuntime";
-import { ChevronRight, LogIn, UserPlus } from "lucide-react";
+import { ACCOUNT_MESSAGES, accountLogin, isCloudflareRuntime } from "@/lib/cfRuntime";
+import { ChevronRight, Eye, EyeOff, KeyRound, LogIn, UserPlus } from "lucide-react";
 import { useState } from "react";
 import { moneyShort } from "@/lib/format";
 import { profileFace, PLAYER_LOOKS } from "@/lib/looks";
@@ -13,7 +13,8 @@ import { BrandMark } from "./ui";
 
 interface Props {
   profiles: DetectiveProfile[];
-  onSignUp: (name: string, look: number, contact: { fullName: string; email: string }) => void;
+  /** Resolves with an error message to show, or nothing when the sign-up went through. */
+  onSignUp: (name: string, look: number, contact: { fullName: string; email: string; password?: string }) => void | Promise<string | null | void>;
   onSignIn: (id: string) => void;
   onGuest: () => void;
 }
@@ -21,7 +22,9 @@ interface Props {
 /**
  * The front door. Sign up makes a new detective, sign in picks one you already
  * made, and you can hop between the two (or skip both) without finishing either.
- * There are no passwords: detectives belong to whoever is signed in to Claude.
+ * On claude.ai detectives belong to whoever is signed in to Claude. On the game's own
+ * (Cloudflare) site, sign-up also sets an email and password so players can sign in on
+ * any device; "Forgot password?" sends them to the owner, who can reset it.
  */
 export function Welcome({ profiles, onSignUp, onSignIn, onGuest }: Props) {
   const [tab, setTab] = useState<"up" | "in">(profiles.length ? "in" : "up");
@@ -32,7 +35,21 @@ export function Welcome({ profiles, onSignUp, onSignIn, onGuest }: Props) {
   const trimmed = name.trim();
   const fullOk = fullName.trim().split(/\s+/).filter(Boolean).length >= 2;
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim());
-  const ready = !!trimmed && fullOk && emailOk;
+  // passwords only on the game's own site (claude.ai signs people in itself)
+  const cloud = isCloudflareRuntime();
+  const [password, setPassword] = useState("");
+  const [password2, setPassword2] = useState("");
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const pwOk = !cloud || (password.length >= 8 && password.length <= 128);
+  const pwMatch = !cloud || password === password2;
+  const ready = !!trimmed && fullOk && emailOk && pwOk && pwMatch && !busy;
+  // signing in with email and password
+  const [inEmail, setInEmail] = useState("");
+  const [inPassword, setInPassword] = useState("");
+  const [inError, setInError] = useState("");
+  const [forgot, setForgot] = useState<string | null>(null);
 
   const switchTab = (t: "up" | "in") => {
     sfx.tap();
@@ -72,11 +89,17 @@ export function Welcome({ profiles, onSignUp, onSignIn, onGuest }: Props) {
       {tab === "up" ? (
         <form
           className="mt-5 flex flex-col gap-4"
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
             if (!ready) return;
-            sfx.success();
-            onSignUp(trimmed, look, { fullName: fullName.trim().replace(/\s+/g, " ").slice(0, 80), email: email.trim().toLowerCase().slice(0, 120) });
+            setBusy(true);
+            setError("");
+            const problem = await onSignUp(trimmed, look, { fullName: fullName.trim().replace(/\s+/g, " ").slice(0, 80), email: email.trim().toLowerCase().slice(0, 120), password: cloud ? password : undefined });
+            setBusy(false);
+            if (problem) {
+              sfx.error();
+              setError(problem);
+            } else sfx.success();
           }}
         >
           <label className="flex flex-col gap-1.5">
@@ -105,6 +128,38 @@ export function Welcome({ profiles, onSignUp, onSignIn, onGuest }: Props) {
             />
             {email && !emailOk && <span className="text-[11px] font-semibold text-danger">That email doesn&apos;t look right.</span>}
           </label>
+          {cloud && (
+            <>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-bold uppercase tracking-wide text-muted">Password (at least 8 characters)</span>
+                <span className="relative">
+                  <input
+                    type={show ? "text" : "password"}
+                    value={password}
+                    maxLength={128}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="new-password"
+                    className={`h-12 w-full rounded-xl border bg-night px-4 pr-12 text-base text-fg focus:border-kick focus:outline-none ${password && !pwOk ? "border-danger" : "border-line"}`}
+                  />
+                  <button type="button" onClick={() => setShow((v) => !v)} aria-label={show ? "Hide password" : "Show password"} className="absolute right-2 top-1/2 grid size-9 -translate-y-1/2 place-items-center text-muted">
+                    {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  </button>
+                </span>
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs font-bold uppercase tracking-wide text-muted">Type the password again</span>
+                <input
+                  type={show ? "text" : "password"}
+                  value={password2}
+                  maxLength={128}
+                  onChange={(e) => setPassword2(e.target.value)}
+                  autoComplete="new-password"
+                  className={`h-12 rounded-xl border bg-night px-4 text-base text-fg focus:border-kick focus:outline-none ${password2 && !pwMatch ? "border-danger" : "border-line"}`}
+                />
+                {password2 && !pwMatch && <span className="text-[11px] font-semibold text-danger">The two passwords are not the same.</span>}
+              </label>
+            </>
+          )}
           <label className="flex flex-col gap-1.5">
             <span className="text-xs font-bold uppercase tracking-wide text-muted">Detective name (shown to other players)</span>
             <input
@@ -142,15 +197,72 @@ export function Welcome({ profiles, onSignUp, onSignIn, onGuest }: Props) {
             disabled={!ready}
             className="h-12 rounded-full bg-kick font-extrabold text-ink shadow-[0_10px_24px_-14px_rgba(20,22,27,0.6)] transition enabled:active:scale-95 disabled:bg-raise disabled:text-muted disabled:shadow-none"
           >
-            {ready ? `Oya, join Panti as Constable ${trimmed.split(" ")[0]}!` : !fullOk ? "Type your full name first" : !emailOk ? "Add your email" : "Pick a detective name"}
+            {busy ? "Creating your account…" : ready ? `Oya, join Panti as Constable ${trimmed.split(" ")[0]}!` : !fullOk ? "Type your full name first" : !emailOk ? "Add your email" : !pwOk ? "Choose a password (8+ characters)" : !pwMatch ? "Passwords must match" : "Pick a detective name"}
           </button>
           <p className="text-center text-[11px] leading-snug text-muted">
             Your full name and email are private: other players only see your detective name. The game&apos;s owner may email you about Naija Detective. We don&apos;t share them.
           </p>
-          <p className="text-center text-xs text-muted">You start as a Constable with {moneyShort(250_000)}. No password needed: {isCloudflareRuntime() ? "your detectives are saved to this device and our server." : "your detectives stay with your Claude account."}</p>
+          {error && <p className="rounded-xl bg-danger/10 px-3 py-2 text-center text-xs font-semibold text-danger">{error}</p>}
+          <p className="text-center text-xs text-muted">
+            You start as a Constable with {moneyShort(250_000)}.{" "}
+            {cloud ? "Sign in with your email and password on any phone or laptop, and your progress follows you." : "Your detectives stay with your Claude account."}
+          </p>
         </form>
       ) : (
         <div className="mt-5 flex flex-col gap-2">
+          {cloud && (
+            <form
+              className="mb-3 flex flex-col gap-2 rounded-2xl border border-line bg-card p-3"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setBusy(true);
+                setInError("");
+                const problem = await accountLogin(inEmail.trim().toLowerCase(), inPassword);
+                setBusy(false);
+                if (problem) {
+                  sfx.error();
+                  setInError(ACCOUNT_MESSAGES[problem]);
+                  return;
+                }
+                sfx.success();
+                // load this player's detectives and progress
+                window.location.reload();
+              }}
+            >
+              <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted">
+                <KeyRound className="size-3.5" /> Sign in with email
+              </span>
+              <input type="email" value={inEmail} onChange={(e) => setInEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" inputMode="email" className="h-11 rounded-xl border border-line bg-night px-3 text-base focus:border-kick focus:outline-none" aria-label="Email" />
+              <input type="password" value={inPassword} onChange={(e) => setInPassword(e.target.value)} placeholder="Password" autoComplete="current-password" className="h-11 rounded-xl border border-line bg-night px-3 text-base focus:border-kick focus:outline-none" aria-label="Password" />
+              {inError && <p className="text-xs font-semibold text-danger">{inError}</p>}
+              <button disabled={busy || !inEmail || !inPassword} className="h-11 rounded-full bg-kick font-extrabold text-ink transition enabled:active:scale-95 disabled:bg-raise disabled:text-muted">
+                {busy ? "Signing in…" : "Sign in"}
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  sfx.tap();
+                  setForgot("…");
+                  setForgot(await supportContact());
+                }}
+                className="text-xs font-bold text-muted underline"
+              >
+                Forgot password?
+              </button>
+              {forgot && (
+                <p className="rounded-xl bg-raise px-3 py-2 text-xs leading-snug text-neutral-700">
+                  Ask the game&apos;s owner to reset it: they will give you a new password to sign in with, then you can change it in Profile.
+                  {forgot !== "…" && forgot !== "" && (
+                    <>
+                      {" "}
+                      Contact: <b className="select-all break-words">{forgot}</b>
+                    </>
+                  )}
+                </p>
+              )}
+            </form>
+          )}
+          {cloud && profiles.length > 0 && <span className="text-xs font-bold uppercase tracking-wide text-muted">Detectives on this device</span>}
           {profiles.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-line p-5 text-center text-sm text-neutral-600">
               No detective don register here yet.{" "}
@@ -199,4 +311,16 @@ export function Welcome({ profiles, onSignUp, onSignIn, onGuest }: Props) {
       </button>
     </div>
   );
+}
+
+/** The owner's contact for password resets (set in the Ad manager settings), or "". */
+async function supportContact(): Promise<string> {
+  try {
+    const rt = (window as unknown as { claude?: { use(n: string): Promise<unknown> } }).claude;
+    const db = (await rt?.use("db")) as { doc(p: string): { get(): Promise<{ data(): Record<string, unknown> | undefined }> } } | null;
+    const d = db ? (await db.doc("adsettings/main").get()).data() : undefined;
+    return typeof d?.support === "string" ? d.support.slice(0, 160) : "";
+  } catch {
+    return "";
+  }
 }

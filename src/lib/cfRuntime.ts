@@ -83,6 +83,84 @@ async function call(path: string, init: RequestInit = {}) {
   return r.json();
 }
 
+/* ---------------------------------------------------------------- email + password accounts */
+
+export type AccountError = "email_taken" | "already_registered" | "bad_email" | "weak_password" | "wrong_login" | "rate_limited" | "banned" | "offline";
+
+const errCode = (e: unknown): AccountError => {
+  const c = (e as { code?: string })?.code ?? "";
+  return (["email_taken", "already_registered", "bad_email", "weak_password", "wrong_login", "rate_limited", "banned"].includes(c) ? c : "offline") as AccountError;
+};
+
+/** Give this player (and their progress) an email and password, so they can sign in anywhere. */
+export async function accountRegister(email: string, password: string, fullName: string): Promise<AccountError | null> {
+  try {
+    await call("/api/account/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, password, fullName }) });
+    return null;
+  } catch (e) {
+    return errCode(e);
+  }
+}
+
+/** Sign in with email and password on this device: the game reloads with that player's progress. */
+export async function accountLogin(email: string, password: string): Promise<AccountError | null> {
+  try {
+    const r = await fetch("/api/account/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, password }) });
+    const body = (await r.json().catch(() => ({}))) as { uid?: string; token?: string; code?: string };
+    if (!r.ok || !body.uid || !body.token) return errCode({ code: body.code ?? (r.status === 401 ? "wrong_login" : "offline") });
+    store.set(AUTH_KEY, JSON.stringify({ uid: body.uid, token: body.token }));
+    authPromise = null;
+    return null;
+  } catch {
+    return "offline";
+  }
+}
+
+/** Sign out on this device; the next visit starts as a new player until they sign in again. */
+export async function accountLogout() {
+  try {
+    await call("/api/account/logout", { method: "POST" });
+  } catch {
+    // signed out locally either way
+  }
+  store.set(AUTH_KEY, null);
+  authPromise = null;
+}
+
+export async function accountChangePassword(old: string, password: string): Promise<AccountError | null> {
+  try {
+    const r = (await call("/api/account/password", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ old, password }) })) as { token?: string };
+    const a = await auth();
+    if (r.token) {
+      store.set(AUTH_KEY, JSON.stringify({ uid: a.uid, token: r.token }));
+      authPromise = null;
+    }
+    return null;
+  } catch (e) {
+    return errCode(e);
+  }
+}
+
+/** The signed-in email for this player, or null when they haven't set one. */
+export async function accountEmail(): Promise<string | null> {
+  try {
+    return ((await call("/api/me")) as { email?: string | null }).email ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export const ACCOUNT_MESSAGES: Record<AccountError, string> = {
+  email_taken: "That email already has an account. Sign in instead.",
+  already_registered: "This player already has an email and password.",
+  bad_email: "That email doesn't look right.",
+  weak_password: "Use a password of at least 8 characters.",
+  wrong_login: "Wrong email or password.",
+  rate_limited: "Too many tries. Please wait a while and try again.",
+  banned: "This account has been suspended.",
+  offline: "Couldn't reach the server. Check your connection and try again.",
+};
+
 /** Owner-only calls (the owner console): overview, bans. */
 export function adminCall(path: string, body?: unknown) {
   return call(`/api/admin/${path}`, body === undefined ? {} : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
