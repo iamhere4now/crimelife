@@ -17,6 +17,16 @@ npm run build:artifact -- <out.html>   # one self-contained page (React from cdn
 
 Republish that file to the same artifact URL, with capabilities `{db: {rules: [{path: "chat", read: "view", write: "owner"}, {path: "chat/{self}", write: "interact"}, adsubmit…, adlive…, adsettings…, {path: "board", read: "view", write: "owner"}, {path: "board/{self}", read: "view", write: "interact"}, {path: "adstats", read: "view", write: "owner"}, {path: "adstats/{self}", read: "view", write: "interact"}, {path: "hunts", read: "view", write: "admin"}]}, user: {}, sample: {}, room: {}}` (the full list is in the published artifact). `board/<id>` is each player's public leaderboard row and `adstats/<id>` their poster view and tap counts`. Friends you share the game with need **Editor** access (or Contributor, on a team plan) to post in the chat or keep a cloud save; viewers can only read. Inside the artifact, progress also saves to the player's private `data/users/<id>/save` document (`src/lib/cloudSave.ts`), so it follows them between devices. Outside claude.ai that sync does nothing.
 
+## Host it on Cloudflare
+
+The game builds into one static page, `cloudflare/index.html` (`npm run build:cloudflare`). `wrangler.jsonc` points Cloudflare at that folder.
+
+- **Workers & Pages → Import a repository** (Workers Builds): set **Build command** to `npm run build:cloudflare` and **Deploy command** to `npx wrangler deploy`.
+- **Pages (Git)**: set **Framework preset** to None, **Build command** to `npm run build:cloudflare` and **Build output directory** to `cloudflare`.
+- **Pages (Direct upload)**: drag the `cloudflare` folder in.
+
+Off claude.ai the game plays fully, but saves stay in each player's browser. The shared features (leaderboard, co-op, chat, cloud save, posters and hunts, Claude's answers) need the claude.ai runtime.
+
 ## How it plays
 
 - **Every scene is its own place.** No two cases share a set. Streets take the look of their region (`LOOK` in `three/world.ts`, chosen by `lookOf` in `three/sceneKits.ts`): Lagos painted shops; Kano and Ilorin earth walls with battlements, arched doors, neem trees and harmattan haze; Abuja glass towers and Aso Rock; Ibadan and Abeokuta rusty brown roofs and hills; the South and East bright balconies and red earth. Rooms have a `decor` style (office, luxury, studio, warehouse, hall, shop) with their own walls and lighting. Passers-by walk, pause, look around and turn, some carrying basins on their heads or talking on phones. Cars, danfos, kekes and okadas with riders drive past, the detective studies clues through the lens, the dog sniffs and trots, the lab tech's camera flashes, and generators and furnaces smoke.

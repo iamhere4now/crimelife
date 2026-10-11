@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start --port 3100",
     "typecheck": "tsc --noEmit",
-    "build:artifact": "node artifact/build.mjs"
+    "build:artifact": "node artifact/build.mjs",
+    "build:cloudflare": "node artifact/build-cloudflare.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.52.0",
@@ -25,5 +26,8 @@
     "esbuild": "^0.28.2",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.0"
+  },
+  "engines": {
+    "node": ">=20.9"
   }
 }

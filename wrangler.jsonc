@@ -1,0 +1,10 @@
+// Cloudflare deploy settings: the game is one static page, built by `npm run build:cloudflare`
+// into ./cloudflare. Used by `npx wrangler deploy` (Workers & Pages, "Import a repository").
+{
+  "name": "crimelife",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./cloudflare",
+    "not_found_handling": "single-page-application"
+  }
+}
