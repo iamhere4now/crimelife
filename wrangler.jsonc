@@ -2,8 +2,7 @@
 //
 //   - the game page:      ./cloudflare (built by `npm run build:cloudflare`)
 //   - the backend:        worker/index.ts (database API, poster images, live rooms)
-//   - the database (D1):  "crimelife": created automatically on the first deploy.
-//                          (To use one you made yourself, add "database_id": "<its id>".)
+//   - the database (D1):  "crimelife" (made in the dashboard; its id is below)
 //   - poster images (R2): optional. Turn R2 on once in the Cloudflare dashboard (R2 Object
 //                          Storage), then put back the "r2_buckets" block below. Until then
 //                          poster images are kept inside the database.
@@ -22,7 +21,8 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "crimelife"
+      "database_name": "crimelife",
+      "database_id": "3ff8342f-a30e-4988-acc4-8ec0c5c59304"
     }
   ],
   // "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "crimelife-media" }],
