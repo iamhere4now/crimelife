@@ -34,7 +34,20 @@ On Cloudflare the game runs on your own account, not on claude.ai.
 
 **Players:** each one gets an anonymous id and secret token, kept in their browser. Sign-up asks for **full name and email**. They're stored privately in `signups/<player>`, and only the player and the owner can read them. The owner sees the list, with **Copy emails** and **Download CSV**, in Ad manager.
 
-**Owner:** opens Advertise → "Owner? Sign in to the Ad manager" and types the `ADMIN_KEY` password.
+**Owner:** go to the game's address with **`#owner`** on the end (e.g. `https://your-game.example/#owner`) and sign in with the `ADMIN_KEY` password. Nothing in the game links there.
+
+The **Owner console** shows player counts and sign-ups (Copy emails, Download CSV). From it you can open the Ad manager, remove leaderboard rows or chat, and ban or unban players. A ban stops posting, chat, leaderboard and co-op; they can still play alone. It also has test tools: +₦, +XP and Jump to General.
+
+The Ad manager can also be opened from Advertise → "Owner? Sign in".
+
+**Security:**
+- Owner password: 10 wrong tries an hour from one address locks that address out.
+- Player tokens: sent only in headers. Live rooms use one-minute, one-use tickets.
+- Rate limits: on new players (30 an hour per address) and on Claude questions (per player, per address, and `ASK_DAILY_LIMIT` for the whole game, default 300 a day).
+- Size limits and document quotas for each player.
+- Poster images: they reach R2 only once the owner publishes them, so nobody can use the bucket for free hosting.
+- Leaderboard: rows are capped to what the game can reach.
+- Pages: images are served with `nosniff` and a locked-down CSP. The page sends security headers (`cloudflare/_headers`) and checks the CDN React files with SRI.
 
 **One-time setup:**
 ```bash

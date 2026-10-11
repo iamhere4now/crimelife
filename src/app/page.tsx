@@ -30,6 +30,7 @@ import "@/lib/huntCase";
 import { HuntModal } from "@/components/HuntModal";
 import { LookEditor } from "@/components/LookEditor";
 import { LuckySpin } from "@/components/LuckySpin";
+import { OwnerConsole } from "@/components/OwnerConsole";
 import { SponsoredRow } from "@/components/SponsoredRow";
 import { announce } from "@/lib/multiplayer";
 import { CITY_BY_ID, cityOf, type CityId } from "@/lib/cities";
@@ -72,6 +73,15 @@ export default function Home() {
   const [openHunt, setOpenHunt] = useState<Hunt | null>(null);
   const [editingLook, setEditingLook] = useState(false);
   const [spinOpen, setSpinOpen] = useState(false);
+  // the owner's private console: only at <game address>#owner, and only with the owner password
+  const [ownerOpen, setOwnerOpen] = useState(false);
+  const [adsTab, setAdsTab] = useState<"new" | "manage">("new");
+  useEffect(() => {
+    const check = () => setOwnerOpen(window.location.hash === "#owner");
+    check();
+    window.addEventListener("hashchange", check);
+    return () => window.removeEventListener("hashchange", check);
+  }, []);
   // approved player posters, for the billboards and walls in the scenes
   useEffect(() => {
     let off: (() => void) | undefined;
@@ -715,7 +725,28 @@ export default function Home() {
         />
       )}
 
-      {adsOpen && <AdsSheet onClose={() => setAdsOpen(false)} />}
+      {ownerOpen && (
+        <OwnerConsole
+          onClose={() => {
+            setOwnerOpen(false);
+            history.replaceState(null, "", window.location.pathname + window.location.search);
+          }}
+          onAds={() => {
+            setAdsTab("manage");
+            setAdsOpen(true);
+          }}
+          onGrant={(m, x) => game.ownerGrant(m, x)}
+        />
+      )}
+      {adsOpen && (
+        <AdsSheet
+          startTab={adsTab}
+          onClose={() => {
+            setAdsOpen(false);
+            setAdsTab("new");
+          }}
+        />
+      )}
       {shownAd && <AdPopup ad={shownAd} onClose={() => setShownAd(null)} />}
       {pickingCity && <CityPicker current={city} state={state} onPick={chooseCity} onClose={() => setPickingCity(false)} />}
 

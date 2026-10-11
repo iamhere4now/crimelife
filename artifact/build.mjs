@@ -16,6 +16,12 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const out = resolve(process.argv[2] ?? resolve(root, "artifact/out/naija-detective.html"));
 
 const REACT_VERSION = "18.3.1";
+// Subresource integrity: the browser refuses the CDN files if they were ever changed
+// (hashes from cdnjs for 18.3.1; update them together with REACT_VERSION).
+const SRI = {
+  react: "sha512-QVs8Lo43F9lSuBykadDb0oSXDL/BbZ588urWVCRwSIoewQv/Ewg1f84mK3U790bZ0FfhFa1YSQUmIhG+pIRKeg==",
+  reactDom: "sha512-6a1107rTlA4gYpgHAqbwLAtxmWipBdJFcq8y5S/aTge3Bp+VAklABm2LO+Kg51vOWR9JMZq1Ovjl5tpluNpTeQ==",
+};
 
 // Map the React imports onto the UMD globals instead of bundling React.
 const reactGlobals = {
@@ -81,8 +87,8 @@ html, body { background: #e4e6ea; color: #14161b; }
 ${css.css}
 </style>
 <div id="root" class="font-sans antialiased"></div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react/${REACT_VERSION}/umd/react.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/${REACT_VERSION}/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/${REACT_VERSION}/umd/react.production.min.js" integrity="${SRI.react}" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/${REACT_VERSION}/umd/react-dom.production.min.js" integrity="${SRI.reactDom}" crossorigin="anonymous"></script>
 <script>${bundle}</script>
 `;
 

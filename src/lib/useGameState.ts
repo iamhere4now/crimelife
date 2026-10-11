@@ -427,6 +427,15 @@ export function useGameState() {
     [commit, current],
   );
 
+  /** Owner test tools: add money and merit to the active detective. */
+  const ownerGrant = useCallback(
+    (money: number, xp: number) => {
+      const s = current();
+      commit({ ...withMoney(s, money), xp: Math.max(0, s.xp + xp) });
+    },
+    [commit, current],
+  );
+
   /** Record newly earned badges. */
   const awardBadges = useCallback(
     (ids: string[]) => {
@@ -640,6 +649,7 @@ export function useGameState() {
     finishDaily,
     awardBadges,
     toggleFavorite,
+    ownerGrant,
     spinsLeft,
     spin,
     findHuntToken,

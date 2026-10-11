@@ -39,9 +39,12 @@ interface Env {
   /** Optional: lets Claude answer the Senior Inspector questions. */
   ANTHROPIC_API_KEY?: string;
   ASK_MODEL?: string;
+  /** Most Senior Inspector questions the whole game may ask Claude per day (default 300). */
+  ASK_DAILY_LIMIT?: string;
 }
 
-const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", "cache-control": "no-store", "x-content-type-options": "nosniff" } });
 const fail = (code: string, status: number) => json({ code }, status);
 
 /* ---------------------------------------------------------------- database setup */
@@ -53,6 +56,9 @@ function schema(env: Env) {
     env.DB.prepare("CREATE INDEX IF NOT EXISTS docs_parent ON docs(parent)").bind(),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS players (uid TEXT PRIMARY KEY, token_hash TEXT NOT NULL, created INTEGER NOT NULL)").bind(),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS usage (uid TEXT NOT NULL, day TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (uid, day))").bind(),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS limits (key TEXT PRIMARY KEY, n INTEGER NOT NULL, reset INTEGER NOT NULL)").bind(),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS tickets (ticket TEXT PRIMARY KEY, uid TEXT NOT NULL, exp INTEGER NOT NULL)").bind(),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS bans (uid TEXT PRIMARY KEY, at INTEGER NOT NULL, note TEXT)").bind(),
   ]).catch((e) => {
     ready = null;
     throw e;
@@ -76,17 +82,44 @@ function sameText(a: string, b: string) {
 
 const randomId = (bytes: number) => [...crypto.getRandomValues(new Uint8Array(bytes))].map((b) => b.toString(36).padStart(2, "0")).join("").slice(0, bytes * 2);
 
-/** The player behind a request: "uid.token" in the Authorization header (or ?auth= for WebSockets). */
-async function caller(req: Request, env: Env): Promise<{ uid: string; owner: boolean } | null> {
-  const url = new URL(req.url);
-  const raw = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "") || url.searchParams.get("auth") || "";
+const ipOf = (req: Request) => req.headers.get("cf-connecting-ip") ?? "local";
+
+/** Count one more use of `key`; false once it has been used `max` times within `windowMs`. */
+async function allow(env: Env, key: string, max: number, windowMs: number): Promise<boolean> {
+  const now = Date.now();
+  const row = await env.DB.prepare(
+    "INSERT INTO limits (key, n, reset) VALUES (?1, 1, ?2) ON CONFLICT(key) DO UPDATE SET n = CASE WHEN reset < ?3 THEN 1 ELSE n + 1 END, reset = CASE WHEN reset < ?3 THEN ?2 ELSE reset END RETURNING n",
+  )
+    .bind(key, now + windowMs, now)
+    .first<{ n: number }>();
+  return (row?.n ?? 1) <= max;
+}
+
+/** Has `key` already reached `max` (without counting this one)? */
+async function blocked(env: Env, key: string, max: number): Promise<boolean> {
+  const row = await env.DB.prepare("SELECT n, reset FROM limits WHERE key = ?").bind(key).first<{ n: number; reset: number }>();
+  return !!row && row.reset > Date.now() && row.n >= max;
+}
+
+/** The player behind a request: "uid.token" in the Authorization header. */
+async function caller(req: Request, env: Env): Promise<{ uid: string; owner: boolean; banned?: boolean } | null> {
+  const raw = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
   const [uid, token] = raw.split(".");
-  if (!uid || !token || !/^[a-z0-9]{8,40}$/.test(uid)) return null;
+  if (!uid || !token || !/^[a-z0-9]{8,40}$/.test(uid) || token.length > 80) return null;
   const row = await env.DB.prepare("SELECT token_hash FROM players WHERE uid = ?").bind(uid).first<{ token_hash: string }>();
   if (!row || !sameText(row.token_hash, await sha256(token))) return null;
+  // the owner password: 10 wrong tries an hour from one address locks that address out for the hour
   const key = req.headers.get("x-admin-key") ?? "";
-  const owner = !!env.ADMIN_KEY && key.length > 0 && sameText(await sha256(key), await sha256(env.ADMIN_KEY));
-  return { uid, owner };
+  let owner = false;
+  if (key && env.ADMIN_KEY) {
+    const lock = `admin-fail:${ipOf(req)}`;
+    if (!(await blocked(env, lock, 10))) {
+      owner = sameText(await sha256(key), await sha256(env.ADMIN_KEY));
+      if (!owner) await allow(env, lock, 10, 3_600_000);
+    }
+  }
+  const ban = owner ? null : await env.DB.prepare("SELECT 1 AS x FROM bans WHERE uid = ?").bind(uid).first();
+  return { uid, owner, banned: !!ban };
 }
 
 /* ---------------------------------------------------------------- access rules */
@@ -114,12 +147,17 @@ function canWrite(seg: string[], who: { uid: string; owner: boolean }) {
   return false;
 }
 
-/** Poster pictures go to R2 (when it's set up); the document keeps a /media/ link. */
-async function storeImages(env: Env, data: Record<string, unknown>) {
-  if (!env.MEDIA) return data;
+/**
+ * Approved poster pictures go to R2 (when it's set up); the document keeps a /media/ link.
+ * Only owner-published documents (adlive, hunts) move images to R2, so nobody can
+ * use the bucket as free image hosting: submissions stay inside the database until
+ * the owner approves them.
+ */
+async function storeImages(env: Env, seg: string[], data: Record<string, unknown>) {
+  if (!env.MEDIA || !OWNER_WRITE.has(seg[0])) return data;
   const out: Record<string, unknown> = { ...data };
   for (const [k, v] of Object.entries(out)) {
-    if (typeof v !== "string" || !v.startsWith("data:image/jpeg;base64,")) continue;
+    if (k !== "image" || typeof v !== "string" || !v.startsWith("data:image/jpeg;base64,")) continue;
     const b64 = v.slice("data:image/jpeg;base64,".length);
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
     const key = `img/${(await sha256(b64)).slice(0, 32)}.jpg`;
@@ -128,6 +166,33 @@ async function storeImages(env: Env, data: Record<string, unknown>) {
   }
   return out;
 }
+
+/** Largest document each player may write, by where it lives (the owner may write up to 1.5 MB). */
+function maxBytes(seg: string[]) {
+  if (seg[0] === "adsubmit") return 400_000; // a poster picture
+  if (seg[0] === "data") return 600_000; // the cloud save
+  return 64_000;
+}
+
+/** How many documents a player may keep in their own collections. */
+const MAX_OWN_DOCS: Record<string, number> = { adsubmit: 40, data: 20 };
+
+const clampNum = (v: unknown, lo: number, hi: number) => (typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : lo);
+
+/** Leaderboard rows are written by players, so keep them within what the game can reach. */
+function tidy(seg: string[], data: Record<string, unknown>, owner: boolean) {
+  if (owner || seg[0] !== "board") return data;
+  return {
+    ...data,
+    balance: clampNum(data.balance, -100_000_000, 2_000_000_000),
+    rating: clampNum(data.rating, 0, 5),
+    xp: clampNum(data.xp, 0, 50_000),
+    solved: clampNum(data.solved, 0, 500),
+    badges: clampNum(data.badges, 0, 100),
+  };
+}
+
+const likeEscape = (s: string) => s.replace(/[\\%_]/g, (c) => "\\" + c);
 
 /** Tell everyone in the lobby that a collection changed, so their lists refresh. */
 function notify(env: Env, ctx: { waitUntil(p: Promise<unknown>): void }, parent: string) {
@@ -146,27 +211,73 @@ async function api(req: Request, env: Env, ctx: { waitUntil(p: Promise<unknown>)
   if (route === "health") return json({ ok: true, media: !!env.MEDIA, ask: !!env.ANTHROPIC_API_KEY });
 
   if (route === "auth" && req.method === "POST") {
+    if (!(await allow(env, `auth:${ipOf(req)}`, 30, 3_600_000))) return fail("rate_limited", 429);
     const uid = randomId(10);
     const token = randomId(24);
     await env.DB.prepare("INSERT INTO players (uid, token_hash, created) VALUES (?, ?, ?)").bind(uid, await sha256(token), Date.now()).run();
     return json({ uid, token });
   }
 
-  const who = await caller(req, env);
-  if (!who) return fail("not_signed_in", 401);
-
-  if (route === "me") return json({ uid: who.uid, owner: who.owner, ownerSet: !!env.ADMIN_KEY });
-
+  // live rooms: a WebSocket can't send headers, so it brings a one-minute, one-use ticket
   if (route.startsWith("room/")) {
     const name = route.slice(5);
     if (!/^[a-z0-9][a-z0-9_.-]{0,47}$/.test(name)) return fail("invalid_argument", 400);
     if (req.headers.get("upgrade") !== "websocket") return fail("expected_websocket", 426);
+    const ticket = url.searchParams.get("ticket") ?? "";
+    const row = await env.DB.prepare("DELETE FROM tickets WHERE ticket = ? RETURNING uid, exp").bind(ticket).first<{ uid: string; exp: number }>();
+    if (!row || row.exp < Date.now()) return fail("not_signed_in", 401);
     const stub = env.ROOMS.get(env.ROOMS.idFromName(name));
-    const fwd = new Request(`https://room/connect?by=${who.uid}`, req);
-    return stub.fetch(fwd);
+    return stub.fetch(new Request(`https://room/connect?by=${row.uid}`, req));
   }
 
-  if (route === "ask" && req.method === "POST") return ask(req, env, who.uid);
+  const who = await caller(req, env);
+  if (!who) return fail("not_signed_in", 401);
+  // banned players can still read (play), but can't write anything or join live rooms
+  if (who.banned && (req.method !== "GET" || route === "ticket")) return fail("banned", 403);
+
+  /* ---- the owner console (needs the owner password) */
+  if (route.startsWith("admin/")) {
+    if (!who.owner) return fail("not_permitted", 403);
+    if (route === "admin/overview") {
+      const players = await env.DB.prepare("SELECT COUNT(*) AS n FROM players").bind().first<{ n: number }>();
+      const today = await env.DB.prepare("SELECT COUNT(*) AS n FROM players WHERE created > ?").bind(Date.now() - 86_400_000).first<{ n: number }>();
+      const bans = await env.DB.prepare("SELECT uid, at, note FROM bans ORDER BY at DESC LIMIT 200").bind().all<{ uid: string; at: number; note: string }>();
+      return json({ players: players?.n ?? 0, newToday: today?.n ?? 0, bans: bans.results, media: !!env.MEDIA, ask: !!env.ANTHROPIC_API_KEY });
+    }
+    if (route === "admin/ban" && req.method === "POST") {
+      const body = (await req.json().catch(() => ({}))) as { uid?: unknown; ban?: unknown; wipe?: unknown; note?: unknown };
+      const uid = typeof body.uid === "string" && /^[a-z0-9]{8,40}$/.test(body.uid) ? body.uid : "";
+      if (!uid) return fail("invalid_argument", 400);
+      if (body.ban === false) {
+        await env.DB.prepare("DELETE FROM bans WHERE uid = ?").bind(uid).run();
+        return json({ ok: true });
+      }
+      const note = typeof body.note === "string" ? body.note.slice(0, 120) : "";
+      await env.DB.prepare("INSERT INTO bans (uid, at, note) VALUES (?, ?, ?) ON CONFLICT(uid) DO UPDATE SET at = excluded.at, note = excluded.note").bind(uid, Date.now(), note).run();
+      if (body.wipe) {
+        // take down what they put in public: leaderboard row and chat
+        await env.DB.batch([env.DB.prepare("DELETE FROM docs WHERE path = ?").bind(`board/${uid}`), env.DB.prepare("DELETE FROM docs WHERE path = ?").bind(`chat/${uid}`)]);
+        notify(env, ctx, "board");
+        notify(env, ctx, "chat");
+      }
+      return json({ ok: true });
+    }
+    return fail("not_found", 404);
+  }
+
+  if (route === "ticket" && req.method === "POST") {
+    if (!(await allow(env, `ticket:${who.uid}`, 120, 3_600_000))) return fail("rate_limited", 429);
+    const ticket = randomId(20);
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM tickets WHERE exp < ?").bind(Date.now()),
+      env.DB.prepare("INSERT INTO tickets (ticket, uid, exp) VALUES (?, ?, ?)").bind(ticket, who.uid, Date.now() + 60_000),
+    ]);
+    return json({ ticket });
+  }
+
+  if (route === "me") return json({ uid: who.uid, owner: who.owner, ownerSet: !!env.ADMIN_KEY });
+
+  if (route === "ask" && req.method === "POST") return ask(req, env, who.uid, ipOf(req));
 
   const path = url.searchParams.get("path") ?? "";
   if (!PATH.test(path)) return fail("invalid_argument", 400);
@@ -192,13 +303,13 @@ async function api(req: Request, env: Env, ctx: { waitUntil(p: Promise<unknown>)
     }
     if (!canWrite(seg, who)) return fail("not_permitted", 403);
     if (req.method === "DELETE") {
-      await env.DB.prepare("DELETE FROM docs WHERE path = ? OR path LIKE ?").bind(path, `${path}/%`).run();
+      await env.DB.prepare("DELETE FROM docs WHERE path = ? OR path LIKE ? ESCAPE '\\'").bind(path, `${likeEscape(path)}/%`).run();
       notify(env, ctx, parent);
       return json({ ok: true });
     }
     if (req.method === "PUT") {
       const text = await req.text();
-      if (text.length > 1_500_000) return fail("too_large", 413);
+      if (text.length > (who.owner ? 1_500_000 : maxBytes(seg))) return fail("too_large", 413);
       let data: unknown;
       try {
         data = JSON.parse(text);
@@ -206,7 +317,17 @@ async function api(req: Request, env: Env, ctx: { waitUntil(p: Promise<unknown>)
         return fail("invalid_argument", 400);
       }
       if (!data || typeof data !== "object" || Array.isArray(data)) return fail("invalid_argument", 400);
-      const stored = await storeImages(env, data as Record<string, unknown>);
+      // a cap on how many documents a player keeps (new documents only)
+      const cap = MAX_OWN_DOCS[seg[0]];
+      if (cap && !who.owner) {
+        const exists = await env.DB.prepare("SELECT 1 AS x FROM docs WHERE path = ?").bind(path).first();
+        if (!exists) {
+          const mine = seg[0] === "data" ? `data/users/${who.uid}/` : `adsubmit/${who.uid}/`;
+          const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM docs WHERE path LIKE ? ESCAPE '\\'").bind(`${likeEscape(mine)}%`).first<{ n: number }>();
+          if ((n?.n ?? 0) >= cap) return fail("quota_exceeded", 429);
+        }
+      }
+      const stored = await storeImages(env, seg, tidy(seg, data as Record<string, unknown>, who.owner));
       await env.DB.prepare("INSERT INTO docs (path, parent, id, data, updated) VALUES (?, ?, ?, ?, ?) ON CONFLICT(path) DO UPDATE SET data = excluded.data, updated = excluded.updated")
         .bind(path, parent, id, JSON.stringify(stored), Date.now())
         .run();
@@ -219,16 +340,19 @@ async function api(req: Request, env: Env, ctx: { waitUntil(p: Promise<unknown>)
 
 /* ---------------------------------------------------------------- the Senior Inspector (Claude API) */
 
-const ASKS_PER_DAY = 40;
+const ASKS_PER_DAY = 20;
+const ASKS_PER_ADDRESS = 40;
+const DAY = 86_400_000;
 
-async function ask(req: Request, env: Env, uid: string) {
+async function ask(req: Request, env: Env, uid: string, ip: string) {
   if (!env.ANTHROPIC_API_KEY) return fail("not_granted", 501);
-  const day = new Date().toISOString().slice(0, 10);
-  const used = await env.DB.prepare("SELECT n FROM usage WHERE uid = ? AND day = ?").bind(uid, day).first<{ n: number }>();
-  if ((used?.n ?? 0) >= ASKS_PER_DAY) return fail("rate_limited", 429);
-  await env.DB.prepare("INSERT INTO usage (uid, day, n) VALUES (?, ?, 1) ON CONFLICT(uid, day) DO UPDATE SET n = n + 1").bind(uid, day).run();
   const { prompt } = (await req.json().catch(() => ({}))) as { prompt?: unknown };
-  if (typeof prompt !== "string" || !prompt.trim()) return fail("invalid_argument", 400);
+  if (typeof prompt !== "string" || !prompt.trim() || prompt.length > 6000) return fail("invalid_argument", 400);
+  // free accounts are easy to make, so the limits also count per address and for the whole game
+  const whole = Math.max(1, Number(env.ASK_DAILY_LIMIT) || 300);
+  if (!(await allow(env, `ask:uid:${uid}`, ASKS_PER_DAY, DAY))) return fail("rate_limited", 429);
+  if (!(await allow(env, `ask:ip:${ip}`, ASKS_PER_ADDRESS, DAY))) return fail("rate_limited", 429);
+  if (!(await allow(env, "ask:all", whole, DAY))) return fail("rate_limited", 429);
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
@@ -250,7 +374,9 @@ export default {
         if (!env.MEDIA) return new Response("Not found", { status: 404 });
         const obj = await env.MEDIA.get(url.pathname.slice("/media/".length));
         if (!obj) return new Response("Not found", { status: 404 });
-        return new Response(obj.body, { headers: { "content-type": obj.httpMetadata?.contentType ?? "image/jpeg", "cache-control": "public, max-age=31536000, immutable" } });
+        return new Response(obj.body, {
+          headers: { "content-type": "image/jpeg", "cache-control": "public, max-age=31536000, immutable", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'none'" },
+        });
       }
     } catch (e) {
       console.error(e);
@@ -267,6 +393,9 @@ interface Attachment {
   by: string;
   presence: Record<string, unknown>;
   updatedAt: number;
+  /** Flood control: messages in the current 5-second window. */
+  burst?: number;
+  burstAt?: number;
 }
 
 /**
@@ -304,6 +433,10 @@ export class Room extends DurableObject {
     }
     if (msg.t !== "presence" || !msg.patch || typeof msg.patch !== "object") return;
     const me = (ws as any).deserializeAttachment() as Attachment;
+    const now = Date.now();
+    const fresh = !me.burstAt || now - me.burstAt > 5000;
+    const burst = fresh ? 1 : (me.burst ?? 0) + 1;
+    if (burst > 40) return; // more than 8 a second: ignore until the window passes
     const next = { ...me.presence };
     for (const [k, v] of Object.entries(msg.patch)) {
       if (!/^[A-Za-z_][A-Za-z0-9_-]{0,63}$/.test(k)) continue;
@@ -311,7 +444,7 @@ export class Room extends DurableObject {
       else next[k] = v;
     }
     if (JSON.stringify(next).length > 4096) return;
-    (ws as any).serializeAttachment({ ...me, presence: next, updatedAt: Date.now() });
+    (ws as any).serializeAttachment({ ...me, presence: next, updatedAt: now, burst, burstAt: fresh ? now : me.burstAt });
     this.sendPeers();
   }
 

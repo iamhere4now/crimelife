@@ -83,6 +83,11 @@ async function call(path: string, init: RequestInit = {}) {
   return r.json();
 }
 
+/** Owner-only calls (the owner console): overview, bans. */
+export function adminCall(path: string, body?: unknown) {
+  return call(`/api/admin/${path}`, body === undefined ? {} : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+}
+
 /** The owner types their admin key once on this device to open the Ad manager. */
 export function setAdminKey(key: string | null) {
   store.set(ADMIN_KEY, key && key.trim() ? key.trim() : null);
@@ -124,13 +129,16 @@ class LiveRoom {
   private async connect() {
     if (this.closed) return;
     let a: { uid: string; token: string };
+    let ticket: string;
     try {
       a = await auth();
+      // a one-minute, one-use ticket, so the player's secret never goes in a web address
+      ticket = ((await call("/api/ticket", { method: "POST" })) as { ticket: string }).ticket;
     } catch {
       return this.later();
     }
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(`${proto}//${location.host}/api/room/${this.name}?auth=${a.uid}.${a.token}`);
+    const ws = new WebSocket(`${proto}//${location.host}/api/room/${this.name}?ticket=${encodeURIComponent(ticket)}`);
     this.ws = ws;
     ws.onmessage = (e) => {
       let msg: { t?: string; peer?: string; peers?: { peer: string; by: string; presence: Json; updatedAt: number }[]; col?: string };

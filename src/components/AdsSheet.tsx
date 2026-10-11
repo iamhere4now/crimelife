@@ -886,8 +886,8 @@ function Manager({ store, settings, onSettings }: { store: AdStore; settings: Ad
 
 /* ---------------------------------------------------------------- owner sign-in (Cloudflare build) */
 
-function OwnerSignIn({ onDone }: { onDone: () => void }) {
-  const [open, setOpen] = useState(false);
+export function OwnerSignIn({ onDone, startOpen = false }: { onDone: () => void; startOpen?: boolean }) {
+  const [open, setOpen] = useState(startOpen);
   const [key, setKey] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
@@ -931,7 +931,7 @@ function OwnerSignIn({ onDone }: { onDone: () => void }) {
 
 /* ---------------------------------------------------------------- the owner's list of sign-ups (Cloudflare build) */
 
-function Signups() {
+export function Signups() {
   const [list, setList] = useState<Signup[] | null>(null);
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState("");
