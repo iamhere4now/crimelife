@@ -125,16 +125,6 @@ export function AdsSheet({ onClose, startTab = "new" }: { onClose: () => void; s
           <Manager store={store} settings={settings} onSettings={setSettings} />
         )}
 
-        {store && store.mode === "shared" && !store.isOwner && isCloudflareRuntime() && (
-          <OwnerSignIn
-            onDone={() => {
-              resetAdStore();
-              setStore(null);
-              setRound((r) => r + 1);
-            }}
-          />
-        )}
-
         {store?.mode === "local" && (
           <p className="mt-4 text-center text-[11px] text-muted">Playing outside claude.ai: posters are kept in this browser only, and you act as the owner.</p>
         )}
@@ -893,19 +883,13 @@ function Manager({ store, settings, onSettings }: { store: AdStore; settings: Ad
   );
 }
 
-/* ---------------------------------------------------------------- owner sign-in (Cloudflare build) */
+/* ---------------------------------------------------------------- owner sign-in (owner console only) */
 
-export function OwnerSignIn({ onDone, startOpen = false }: { onDone: () => void; startOpen?: boolean }) {
-  const [open, setOpen] = useState(startOpen);
+/** The owner password form. Only shown inside the owner console (#owner), never to players. */
+export function OwnerSignIn({ onDone }: { onDone: () => void }) {
   const [key, setKey] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
-  if (!open)
-    return (
-      <button onClick={() => setOpen(true)} className="mx-auto mt-5 block text-[11px] font-semibold text-muted underline">
-        Owner? Sign in to the Ad manager
-      </button>
-    );
   return (
     <form
       className="mt-5 rounded-2xl bg-card p-3"

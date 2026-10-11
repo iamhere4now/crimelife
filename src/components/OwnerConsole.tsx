@@ -2,6 +2,7 @@
 
 import { Ban, LogOut, Megaphone, RefreshCw, ShieldCheck, Trash2, Wrench, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { resetAdStore } from "@/lib/ads";
 import { adminCall, checkOwner, isCloudflareRuntime, setAdminKey } from "@/lib/cfRuntime";
 import { money } from "@/lib/format";
 import { sfx } from "@/lib/SoundEffects";
@@ -38,6 +39,8 @@ export function OwnerConsole({ onClose, onAds, onGrant }: { onClose: () => void;
     const me = await checkOwner();
     setOwner(me.owner);
     if (!me.owner) return;
+    // the Ad manager reads who is owner when it opens: let it check again now
+    resetAdStore();
     const db = (await (window as unknown as { claude: { use(n: string): Promise<unknown> } }).claude.use("db")) as Db;
     const [o, b, c] = await Promise.all([adminCall("overview") as Promise<Overview>, db.collection("board").get(), db.collection("chat").get()]);
     setOver(o);
@@ -92,7 +95,7 @@ export function OwnerConsole({ onClose, onAds, onGrant }: { onClose: () => void;
         ) : owner === null ? (
           <p className="mt-6 text-sm text-muted">Checking…</p>
         ) : !owner ? (
-          <OwnerSignIn startOpen onDone={() => void load()} />
+          <OwnerSignIn onDone={() => void load()} />
         ) : (
           <div className="mt-4 space-y-4">
             {note && <p className="rounded-xl bg-kick/10 px-3 py-2 text-xs font-semibold">{note}</p>}
@@ -226,6 +229,7 @@ export function OwnerConsole({ onClose, onAds, onGrant }: { onClose: () => void;
             <button
               onClick={() => {
                 setAdminKey(null);
+                resetAdStore();
                 setOwner(false);
                 sfx.tap();
               }}
