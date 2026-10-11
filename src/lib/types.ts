@@ -49,7 +49,9 @@ export type CaseId =
   // one for every other state
   | "kad-refinery" | "kat-feeding" | "zam-gold" | "keb-rice" | "sok-hajj" | "bau-yankari" | "gom-fertilizer" | "bor-relief" | "yob-grain" | "jig-solar" | "bnu-snake" | "kog-ghost" | "nas-lithium" | "ngr-ponzi" | "pla-potato" | "ada-notes" | "tar-yam" | "ana-drugs" | "imo-mace" | "del-pipeline" | "bay-kpofire" | "akw-pension" | "crs-carnival" | "ebo-rice" | "eki-exam" | "ond-kidnap" | "osu-grove"
   // a second case for the states
-  | "kat-phones" | "zam-cards" | "keb-fishing" | "sok-rams" | "bau-tickets" | "gom-borehole" | "bor-notes" | "yob-goats" | "jig-transformer" | "ngr-scholarship" | "ada-papers" | "bnu-scale" | "kog-dredge" | "nas-garri" | "ana-parts" | "imo-wedding" | "del-land" | "bay-skimmer" | "akw-jobs" | "ebo-salt" | "eki-raffle" | "ond-cocoa";
+  | "kat-phones" | "zam-cards" | "keb-fishing" | "sok-rams" | "bau-tickets" | "gom-borehole" | "bor-notes" | "yob-goats" | "jig-transformer" | "ngr-scholarship" | "ada-papers" | "bnu-scale" | "kog-dredge" | "nas-garri" | "ana-parts" | "imo-wedding" | "del-land" | "bay-skimmer" | "akw-jobs" | "ebo-salt" | "eki-raffle" | "ond-cocoa"
+  // made by the state case generator (lib/content/stateGames)
+  | `g-${string}`;
 
 /** Original background loops in each region's style (see lib/music.ts). */
 export type MusicStyle = "lagos" | "sahel" | "highlife" | "rivers" | "fuji" | "juju" | "abuja" | "plateau" | "calabar" | "benin";

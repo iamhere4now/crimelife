@@ -33,7 +33,8 @@ import { LuckySpin } from "@/components/LuckySpin";
 import { OwnerConsole } from "@/components/OwnerConsole";
 import { SponsoredRow } from "@/components/SponsoredRow";
 import { announce } from "@/lib/multiplayer";
-import { CITY_BY_ID, cityOf, type CityId } from "@/lib/cities";
+import { CITY_BY_ID, casesIn, cityOf, type CityId } from "@/lib/cities";
+import { StateBanner, TravelWelcome } from "@/components/StateBanner";
 import { rankFor } from "@/lib/ranks";
 import { gateRemaining, isCaseOpen, isModeOpen, MODE_BY_ID, modeOf, MODES, type ModeId } from "@/lib/modes";
 import { sfx } from "@/lib/SoundEffects";
@@ -135,8 +136,12 @@ export default function Home() {
       // only a convenience
     }
   }, []);
+  // a short welcome banner after travelling to a new city
+  const [welcomeTo, setWelcomeTo] = useState<CityId | null>(null);
+  const endWelcome = useCallback(() => setWelcomeTo(null), []);
   const chooseCity = (id: CityId) => {
     sfx.whoosh();
+    if (id !== city) setWelcomeTo(id);
     setCity(id);
     setPickingCity(false);
     setMode(null);
@@ -439,6 +444,16 @@ export default function Home() {
                 </button>
               </div>
             )}
+            {!mode && !category && (
+              <StateBanner
+                city={CITY_BY_ID[city]}
+                cases={casesIn(city).length}
+                onTravel={() => {
+                  sfx.tap();
+                  setPickingCity(true);
+                }}
+              />
+            )}
             <CaseCarousel cases={carousel} state={state} onOpen={openCase} />
 
             <DailyCard
@@ -738,6 +753,7 @@ export default function Home() {
           onGrant={(m, x) => game.ownerGrant(m, x)}
         />
       )}
+      {welcomeTo && <TravelWelcome city={CITY_BY_ID[welcomeTo]} onDone={endWelcome} />}
       {adsOpen && (
         <AdsSheet
           startTab={adsTab}

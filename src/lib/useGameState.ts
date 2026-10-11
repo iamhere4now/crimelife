@@ -91,8 +91,8 @@ function addUnique(list: string[] | undefined, id: string) {
 
 /** Merit for saves made before XP existed, so veterans don't restart at Constable. */
 function estimateXp(s: GameState): number {
-  const lies = Object.values(s.caught).reduce((n, ids) => n + (ids?.length ?? 0), 0);
-  const stars = Object.values(s.sweepStars).reduce((n, v) => n + (v ?? 0), 0);
+  const lies = Object.values(s.caught).reduce<number>((n, ids) => n + (ids?.length ?? 0), 0);
+  const stars = Object.values(s.sweepStars).reduce<number>((n, v) => n + (v ?? 0), 0);
   return s.solved.length * XP_ARREST + lies * XP_LIE + stars * XP_STAR;
 }
 

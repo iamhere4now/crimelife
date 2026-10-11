@@ -12,9 +12,15 @@ import { STATE_CASES_SOUTH } from "./content/statesSouth";
 import { STATE_CASES_MORE_NORTH } from "./content/statesMoreNorth";
 import { STATE_CASES_MORE_SOUTH } from "./content/statesMoreSouth";
 import { NAIJA_FILES } from "./content/naijaFiles";
+import { generateStateCases } from "./content/stateGames";
 import type { CaseId, Category, CrimeCase, Region, SceneId, Squad } from "./types";
 
-export const CASES: CrimeCase[] = [...CASES_1_TO_3, ...CASES_4_TO_6, ...CASES_7_TO_9, ...CASES_10_TO_20, ...LAGOS_MORE, ...NAIJA_FILES, ...CITY_CASES_NORTH, ...CITY_CASES_WEST, ...CITY_CASES_SOUTH, ...STATE_CASES_NORTH, ...STATE_CASES_MIDDLE, ...STATE_CASES_SOUTH, ...STATE_CASES_MORE_NORTH, ...STATE_CASES_MORE_SOUTH];
+const WRITTEN: CrimeCase[] = [...CASES_1_TO_3, ...CASES_4_TO_6, ...CASES_7_TO_9, ...CASES_10_TO_20, ...LAGOS_MORE, ...NAIJA_FILES, ...CITY_CASES_NORTH, ...CITY_CASES_WEST, ...CITY_CASES_SOUTH, ...STATE_CASES_NORTH, ...STATE_CASES_MIDDLE, ...STATE_CASES_SOUTH, ...STATE_CASES_MORE_NORTH, ...STATE_CASES_MORE_SOUTH];
+
+/** About 20 cases for every state outside Lagos, generated from storylines and each state's real places. */
+export const GENERATED: CrimeCase[] = generateStateCases(WRITTEN);
+
+export const CASES: CrimeCase[] = [...WRITTEN, ...GENERATED];
 
 /** The drawn scene a case uses. */
 export function sceneOf(c: CrimeCase): SceneId {

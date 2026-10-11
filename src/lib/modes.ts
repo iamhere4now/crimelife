@@ -1,4 +1,4 @@
-import { CASE_BY_ID } from "./cases";
+import { CASE_BY_ID, GENERATED } from "./cases";
 import { NAIJA_FILES } from "./content/naijaFiles";
 import type { CaseId, GameState } from "./types";
 
@@ -20,7 +20,7 @@ export const MODES: Mode[] = [
     name: "Street Mode",
     tagline: "Street hustle in every city. Free entry.",
     cost: 0,
-    caseIds: ["neon-alley", "livestream", "market", "pos", "park-dues", "agege", "yaba-hostel", "lag-mainland", "lag-oshodi", "lag-makoko", "lag-tollgate", "kad-refinery", "kat-feeding", "zam-gold", "keb-rice", "sok-hajj", "bau-yankari", "gom-fertilizer", "bor-relief", "yob-grain", "jig-solar", "bnu-snake", "kog-ghost", "nas-lithium", "ngr-ponzi", "pla-potato", "ada-notes", "tar-yam", "ana-drugs", "imo-mace", "del-pipeline", "bay-kpofire", "akw-pension", "crs-carnival", "ebo-rice", "eki-exam", "ond-kidnap", "osu-grove", "kat-phones", "zam-cards", "keb-fishing", "sok-rams", "bau-tickets", "gom-borehole", "bor-notes", "yob-goats", "jig-transformer", "ngr-scholarship", "ada-papers", "bnu-scale", "kog-dredge", "nas-garri", "ana-parts", "imo-wedding", "del-land", "bay-skimmer", "akw-jobs", "ebo-salt", "eki-raffle", "ond-cocoa", "abj-wuse", "abj-jabi", "kano-dye", "kano-kwari", "ilo-ram", "ilo-pottery", "iba-mokola", "iba-dugbe", "abk-adire", "abk-olumo", "ben-igun", "ben-bdc", "ph-mileone", "ph-tanker", "aba-ariaria", "aba-ngwa", "enu-coal", "enu-ogbete"],
+    caseIds: ["neon-alley", "livestream", "market", "pos", "park-dues", "agege", "yaba-hostel", "lag-mainland", "lag-oshodi", "lag-makoko", "lag-tollgate", "kad-refinery", "kat-feeding", "zam-gold", "keb-rice", "sok-hajj", "bau-yankari", "gom-fertilizer", "bor-relief", "yob-grain", "jig-solar", "bnu-snake", "kog-ghost", "nas-lithium", "ngr-ponzi", "pla-potato", "ada-notes", "tar-yam", "ana-drugs", "imo-mace", "del-pipeline", "bay-kpofire", "akw-pension", "crs-carnival", "ebo-rice", "eki-exam", "ond-kidnap", "osu-grove", "kat-phones", "zam-cards", "keb-fishing", "sok-rams", "bau-tickets", "gom-borehole", "bor-notes", "yob-goats", "jig-transformer", "ngr-scholarship", "ada-papers", "bnu-scale", "kog-dredge", "nas-garri", "ana-parts", "imo-wedding", "del-land", "bay-skimmer", "akw-jobs", "ebo-salt", "eki-raffle", "ond-cocoa", "abj-wuse", "abj-jabi", "kano-dye", "kano-kwari", "ilo-ram", "ilo-pottery", "iba-mokola", "iba-dugbe", "abk-adire", "abk-olumo", "ben-igun", "ben-bdc", "ph-mileone", "ph-tanker", "aba-ariaria", "aba-ngwa", "enu-coal", "enu-ogbete", ...GENERATED.map((c) => c.id)],
   },
   {
     id: "vip",
