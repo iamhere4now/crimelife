@@ -1,0 +1,313 @@
+@import "tailwindcss" source(".."); /* scan src/ only: build scripts stay out of the dev server's way */
+
+@theme {
+  /* light theme: soft grey page, white cards, near-black primary */
+  --color-ink: #f2f3f5;
+  --color-night: #e7e9ed;
+  --color-card: #ffffff;
+  --color-raise: #eef0f3;
+  --color-line: #e3e6ea;
+  --color-kick: #14161b;
+  --color-kick-dim: #2b2f36;
+  --color-muted: #868c95;
+  --color-danger: #e5484d;
+  --color-fg: #14161b;
+  --color-go: #16a34a;
+  --color-neon: #53fc18;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  /* the laptop layout starts at 832px, so scaled Windows laptops (125-150%) and
+     half-screen browser windows get it too, not a stretched phone column */
+  --breakpoint-lg: 52rem;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  background: #e4e6ea;
+  color: #14161b;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  overscroll-behavior-y: none;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Kick-style neon outline on cards */
+.neon-ring {
+  box-shadow: 0 0 0 2px var(--color-kick);
+}
+
+.neon-text {
+  text-shadow: none;
+}
+
+/* Big category wordmarks: heavy italic lettering with a dark stroke */
+.wordmark {
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: -0.04em;
+  color: #fff;
+  -webkit-text-stroke: 1.5px #0b0e0f;
+  paint-order: stroke fill;
+  text-shadow:
+    3px 3px 0 var(--color-kick),
+    0 0 18px rgba(0, 0, 0, 0.6);
+}
+
+/* ---------- scene animation ---------- */
+.bob {
+  animation: bob 2.6s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: bottom center;
+}
+@keyframes bob {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  50% { transform: translateY(-2px) rotate(-1deg); }
+}
+.wag {
+  animation: wag 0.5s ease-in-out infinite alternate;
+  transform-box: fill-box;
+  transform-origin: bottom right;
+}
+@keyframes wag {
+  to { transform: rotate(-25deg); }
+}
+.flash {
+  animation: flash 3s steps(1) infinite;
+}
+@keyframes flash {
+  0%, 92% { fill: #ffffff; }
+  94% { fill: #fffbcc; filter: drop-shadow(0 0 6px #fff); }
+}
+.rain {
+  animation: rain 0.7s linear infinite;
+}
+@keyframes rain {
+  from { transform: translate(0, -20px); }
+  to { transform: translate(-6px, 20px); }
+}
+.neon-flicker {
+  animation: flicker 4s linear infinite;
+}
+@keyframes flicker {
+  0%, 18%, 22%, 62%, 64%, 100% { opacity: 1; }
+  20%, 63% { opacity: 0.35; }
+}
+.sparkle {
+  animation: sparkle 1.8s ease-in-out infinite;
+}
+@keyframes sparkle {
+  50% { opacity: 0.4; }
+}
+.laser {
+  animation: laser 1.2s ease-in-out infinite;
+}
+@keyframes laser {
+  50% { opacity: 0.35; }
+}
+
+/* ---------- clue hotspot ping ---------- */
+.hotspot-ping::before,
+.hotspot-ping::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 2px solid var(--color-neon);
+  animation: ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+.hotspot-ping::after {
+  animation-delay: 0.9s;
+}
+@keyframes ping {
+  from { transform: scale(0.6); opacity: 0.9; }
+  to { transform: scale(2.1); opacity: 0; }
+}
+
+/* ---------- live dot ---------- */
+.live-dot {
+  animation: livedot 1.4s ease-in-out infinite;
+}
+@keyframes livedot {
+  50% { opacity: 0.3; }
+}
+
+/* ---------- sheets + overlays ---------- */
+.sheet-up {
+  animation: sheet-up 0.32s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+.fade-in {
+  animation: fade-in 0.2s ease-out;
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+}
+.pop-in {
+  animation: pop-in 0.35s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+@keyframes pop-in {
+  from { transform: scale(0.85); opacity: 0; }
+}
+.stamp {
+  animation: stamp 0.55s cubic-bezier(0.2, 1.6, 0.4, 1) 0.15s both;
+}
+@keyframes stamp {
+  from { transform: rotate(-12deg) scale(2.4); opacity: 0; }
+  to { transform: rotate(-8deg) scale(1); opacity: 1; }
+}
+.shake {
+  animation: shake 0.5s ease-in-out 2;
+}
+@keyframes shake {
+  20%, 60% { transform: translateX(-8px); }
+  40%, 80% { transform: translateX(8px); }
+}
+.alarm-flash {
+  animation: alarm 0.6s ease-in-out 4;
+}
+@keyframes alarm {
+  50% { background-color: rgba(255, 59, 78, 0.35); }
+}
+.confetti {
+  position: absolute;
+  top: -12px;
+  width: 8px;
+  height: 14px;
+  border-radius: 2px;
+  animation: confetti 2.4s cubic-bezier(0.3, 0.6, 0.6, 1) forwards;
+}
+@keyframes confetti {
+  to { transform: translateY(110vh) rotate(720deg); opacity: 0.6; }
+}
+.scan-bar {
+  animation: scan-bar 1.2s linear forwards;
+}
+@keyframes scan-bar {
+  from { width: 0%; }
+  to { width: 100%; }
+}
+.scan-line {
+  animation: scan-line 1.2s ease-in-out infinite alternate;
+}
+@keyframes scan-line {
+  from { top: 0%; }
+  to { top: 100%; }
+}
+.rise {
+  animation: rise 1.4s ease-out forwards;
+}
+@keyframes rise {
+  from { transform: translateY(0); opacity: 1; }
+  to { transform: translateY(-36px); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* soft floating shadow for white cards */
+.soft {
+  box-shadow: 0 12px 32px -20px rgba(20, 22, 27, 0.45);
+}
+.glass {
+  background: rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.city-ping {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: city-ping 1.4s ease-out infinite;
+}
+@keyframes city-ping {
+  from { transform: scale(1); opacity: 0.5; }
+  to { transform: scale(3); opacity: 0; }
+}
+
+/* waiting for a 3D thumbnail */
+.thumb-wait {
+  background: linear-gradient(110deg, #2a2d36 30%, #3a3e4a 45%, #2a2d36 60%) 0 0 / 300% 100%, #2a2d36;
+  animation: thumb-wait 1.6s ease-in-out infinite;
+}
+@keyframes thumb-wait {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thumb-wait { animation: none; }
+}
+
+/* bonus evidence: a faint amber glint that's easy to miss */
+.scrap-glint {
+  box-shadow: 0 0 6px 1px rgba(245, 165, 36, 0.8);
+  animation: scrap-glint 2.6s ease-in-out infinite;
+}
+@keyframes scrap-glint {
+  0%, 70%, 100% { opacity: 0.45; transform: scale(0.8); }
+  80% { opacity: 1; transform: scale(1.35); box-shadow: 0 0 12px 4px rgba(255, 220, 120, 0.95); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .scrap-glint { animation: none; opacity: 0.8; }
+}
+
+/* fun: things pop in, hearts beat, the spin wheel turns */
+.pop-in {
+  animation: pop-in 0.35s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+@keyframes pop-in {
+  from { transform: scale(0.7); }
+  to { transform: scale(1); }
+}
+.heart-beat {
+  animation: heart-beat 0.45s ease-out;
+}
+@keyframes heart-beat {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.45); }
+  70% { transform: scale(0.9); }
+  100% { transform: scale(1); }
+}
+.wiggle {
+  animation: wiggle 2.8s ease-in-out infinite;
+}
+@keyframes wiggle {
+  0%, 86%, 100% { transform: rotate(0); }
+  89% { transform: rotate(-9deg); }
+  92% { transform: rotate(8deg); }
+  95% { transform: rotate(-5deg); }
+}
+.sponsor-shine {
+  background-image: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.35) 50%, transparent 70%);
+  background-size: 250% 100%;
+  animation: sponsor-shine 3.5s linear infinite;
+}
+@keyframes sponsor-shine {
+  from { background-position: 150% 0; }
+  to { background-position: -100% 0; }
+}
+.scrap-glint.eagle {
+  animation-duration: 1.4s;
+  box-shadow: 0 0 14px 5px rgba(255, 200, 80, 0.95);
+}
+@media (prefers-reduced-motion: reduce) {
+  .pop-in, .heart-beat, .wiggle, .sponsor-shine { animation: none; }
+}

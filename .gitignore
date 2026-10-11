@@ -1,0 +1,9 @@
+node_modules
+.next
+next-env.d.ts
+*.tsbuildinfo
+artifact/out
+
+# local copies (the source zip, and the claude.ai build already kept as cloudflare/index.html)
+naija-detective-source.zip
+naija-detective.html
