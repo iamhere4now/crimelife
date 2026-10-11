@@ -26,7 +26,7 @@ On Cloudflare the game runs on your own account, not on claude.ai.
 | The game page | `cloudflare/index.html`, built by `npm run build:cloudflare` |
 | The backend | `worker/index.ts`, one Worker |
 | Database: saves, leaderboard, chat, posters, hunts, stats, sign-ups | **D1** `crimelife` |
-| Poster images | **R2** bucket `crimelife-media`, served at `/media/...` |
+| Poster images | **R2** bucket `crimelife-media`, served at `/media/...` (optional; until R2 is on they stay in D1) |
 | Co-op rooms, who's online, live list updates | **Durable Objects** (`Room`) |
 | Senior Inspector questions | Claude API, if you set `ANTHROPIC_API_KEY`; otherwise scripted tips |
 
@@ -52,9 +52,11 @@ The Ad manager can also be opened from Advertise → "Owner? Sign in".
 **One-time setup:**
 ```bash
 npx wrangler login
-npx wrangler d1 create crimelife          # paste the database_id into wrangler.jsonc
-npx wrangler r2 bucket create crimelife-media
 npx wrangler secret put ADMIN_KEY         # your owner password
+# the D1 database "crimelife" is created automatically on the first deploy
+# poster images in R2 (optional): turn R2 on in the dashboard, run
+#   npx wrangler r2 bucket create crimelife-media
+# and put back the "r2_buckets" line in wrangler.jsonc
 npx wrangler secret put ANTHROPIC_API_KEY # optional
 npm run build:cloudflare && npx wrangler deploy
 ```
