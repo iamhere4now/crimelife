@@ -9,6 +9,7 @@ import { rankFor } from "@/lib/ranks";
 import { sfx } from "@/lib/SoundEffects";
 import type { DetectiveProfile } from "@/lib/types";
 import { Avatar } from "./Avatar";
+import { DOOR_BLUE, Doodles, Onboarding } from "./Onboarding";
 import { BrandMark } from "./ui";
 
 interface Props {
@@ -28,6 +29,8 @@ interface Props {
  */
 export function Welcome({ profiles, onSignUp, onSignIn, onGuest }: Props) {
   const [tab, setTab] = useState<"up" | "in">(profiles.length ? "in" : "up");
+  // new players see the three intro screens first (once per device)
+  const [intro, setIntro] = useState(() => !profiles.length && !seenIntro());
   const [name, setName] = useState("");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -56,17 +59,37 @@ export function Welcome({ profiles, onSignUp, onSignIn, onGuest }: Props) {
     setTab(t);
   };
 
+  if (intro)
+    return (
+      <Onboarding
+        onDone={() => {
+          markIntroSeen();
+          setTab("up");
+          setIntro(false);
+        }}
+        onSignIn={() => {
+          markIntroSeen();
+          setTab("in");
+          setIntro(false);
+        }}
+      />
+    );
+
   return (
-    <div className="mx-auto flex min-h-dvh max-w-md flex-col bg-ink px-5 pb-[max(env(safe-area-inset-bottom),20px)] pt-[max(env(safe-area-inset-top),28px)]">
-      <div className="flex flex-col items-center text-center">
-        <BrandMark className="size-16" />
-        <h1 className="mt-3 text-3xl font-black italic tracking-tight">
-          Naija <span className="text-kick neon-text">Detective</span>
-        </h1>
-        <p className="mt-1 text-sm text-neutral-600">From Lagos to Kano, wahala dey everywhere. Na you go catch the thief?</p>
+    <div className="relative mx-auto flex min-h-dvh max-w-md flex-col overflow-hidden bg-[#f3f5f8] px-6 pb-[max(env(safe-area-inset-bottom),20px)] pt-[max(env(safe-area-inset-top),18px)] text-[#14161b]">
+      <Doodles />
+      <div className="relative flex items-center justify-center gap-2">
+        <BrandMark className="size-7" />
+        <span className="text-lg font-black tracking-tight">Naija Detective</span>
+      </div>
+      <div className="relative mt-7 text-center">
+        <h1 className="text-[28px] font-extrabold leading-tight tracking-tight">{tab === "up" ? "Create your detective" : "Welcome back, detective"}</h1>
+        <p className="mx-auto mt-1.5 max-w-xs text-[15px] leading-snug text-[#5b6475]">
+          {tab === "up" ? "From Lagos to Kano, wahala dey everywhere. Na you go catch the thief?" : "Sign in to pick up your cases where you left them."}
+        </p>
       </div>
 
-      <div className="mt-6 grid grid-cols-2 rounded-full border border-line bg-night p-1" role="tablist">
+      <div className="relative mt-6 grid grid-cols-2 rounded-full bg-white p-1 shadow-sm" role="tablist">
         {(
           [
             ["up", "Sign up", UserPlus],
@@ -78,7 +101,8 @@ export function Welcome({ profiles, onSignUp, onSignIn, onGuest }: Props) {
             role="tab"
             aria-selected={tab === id}
             onClick={() => switchTab(id)}
-            className={`flex h-10 items-center justify-center gap-1.5 rounded-full text-sm font-extrabold transition ${tab === id ? "bg-kick text-ink" : "text-neutral-600"}`}
+            className={`flex h-11 items-center justify-center gap-1.5 rounded-full text-sm font-bold transition ${tab === id ? "text-white shadow" : "text-[#5b6475]"}`}
+            style={tab === id ? { background: DOOR_BLUE } : undefined}
           >
             <Icon className="size-4" />
             {label}
@@ -88,7 +112,7 @@ export function Welcome({ profiles, onSignUp, onSignIn, onGuest }: Props) {
 
       {tab === "up" ? (
         <form
-          className="mt-5 flex flex-col gap-4"
+          className="relative mt-5 flex flex-col gap-4"
           onSubmit={async (e) => {
             e.preventDefault();
             if (!ready) return;
@@ -103,19 +127,19 @@ export function Welcome({ profiles, onSignUp, onSignIn, onGuest }: Props) {
           }}
         >
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-bold uppercase tracking-wide text-muted">Your full name</span>
+            <span className="text-xs font-bold uppercase tracking-wide text-[#5b6475]">Your full name</span>
             <input
               value={fullName}
               maxLength={80}
               onChange={(e) => setFullName(e.target.value)}
               placeholder="e.g. Adaeze Okafor"
               autoComplete="name"
-              className={`h-12 rounded-xl border bg-night px-4 text-base text-fg placeholder:text-muted focus:border-kick focus:outline-none ${fullName && !fullOk ? "border-danger" : "border-line"}`}
+              className={`h-12 rounded-2xl border bg-white px-4 text-base text-[#14161b] placeholder:text-[#9aa2b1] focus:border-[#2457e6] focus:outline-none focus:ring-2 focus:ring-[#2457e6]/25 ${fullName && !fullOk ? "border-danger" : "border-[#e3e6ec]"}`}
             />
             {fullName && !fullOk && <span className="text-[11px] font-semibold text-danger">Please write your first name and surname.</span>}
           </label>
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-bold uppercase tracking-wide text-muted">Your email</span>
+            <span className="text-xs font-bold uppercase tracking-wide text-[#5b6475]">Your email</span>
             <input
               type="email"
               value={email}
@@ -124,14 +148,14 @@ export function Welcome({ profiles, onSignUp, onSignIn, onGuest }: Props) {
               placeholder="you@example.com"
               autoComplete="email"
               inputMode="email"
-              className={`h-12 rounded-xl border bg-night px-4 text-base text-fg placeholder:text-muted focus:border-kick focus:outline-none ${email && !emailOk ? "border-danger" : "border-line"}`}
+              className={`h-12 rounded-2xl border bg-white px-4 text-base text-[#14161b] placeholder:text-[#9aa2b1] focus:border-[#2457e6] focus:outline-none focus:ring-2 focus:ring-[#2457e6]/25 ${email && !emailOk ? "border-danger" : "border-[#e3e6ec]"}`}
             />
             {email && !emailOk && <span className="text-[11px] font-semibold text-danger">That email doesn&apos;t look right.</span>}
           </label>
           {cloud && (
             <>
               <label className="flex flex-col gap-1.5">
-                <span className="text-xs font-bold uppercase tracking-wide text-muted">Password (at least 8 characters)</span>
+                <span className="text-xs font-bold uppercase tracking-wide text-[#5b6475]">Password (at least 8 characters)</span>
                 <span className="relative">
                   <input
                     type={show ? "text" : "password"}
@@ -139,7 +163,7 @@ export function Welcome({ profiles, onSignUp, onSignIn, onGuest }: Props) {
                     maxLength={128}
                     onChange={(e) => setPassword(e.target.value)}
                     autoComplete="new-password"
-                    className={`h-12 w-full rounded-xl border bg-night px-4 pr-12 text-base text-fg focus:border-kick focus:outline-none ${password && !pwOk ? "border-danger" : "border-line"}`}
+                    className={`h-12 w-full rounded-2xl border bg-white px-4 pr-12 text-base text-[#14161b] focus:border-[#2457e6] focus:outline-none focus:ring-2 focus:ring-[#2457e6]/25 ${password && !pwOk ? "border-danger" : "border-[#e3e6ec]"}`}
                   />
                   <button type="button" onClick={() => setShow((v) => !v)} aria-label={show ? "Hide password" : "Show password"} className="absolute right-2 top-1/2 grid size-9 -translate-y-1/2 place-items-center text-muted">
                     {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
@@ -147,21 +171,21 @@ export function Welcome({ profiles, onSignUp, onSignIn, onGuest }: Props) {
                 </span>
               </label>
               <label className="flex flex-col gap-1.5">
-                <span className="text-xs font-bold uppercase tracking-wide text-muted">Type the password again</span>
+                <span className="text-xs font-bold uppercase tracking-wide text-[#5b6475]">Type the password again</span>
                 <input
                   type={show ? "text" : "password"}
                   value={password2}
                   maxLength={128}
                   onChange={(e) => setPassword2(e.target.value)}
                   autoComplete="new-password"
-                  className={`h-12 rounded-xl border bg-night px-4 text-base text-fg focus:border-kick focus:outline-none ${password2 && !pwMatch ? "border-danger" : "border-line"}`}
+                  className={`h-12 rounded-2xl border bg-white px-4 text-base text-[#14161b] focus:border-[#2457e6] focus:outline-none focus:ring-2 focus:ring-[#2457e6]/25 ${password2 && !pwMatch ? "border-danger" : "border-[#e3e6ec]"}`}
                 />
                 {password2 && !pwMatch && <span className="text-[11px] font-semibold text-danger">The two passwords are not the same.</span>}
               </label>
             </>
           )}
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-bold uppercase tracking-wide text-muted">Detective name (shown to other players)</span>
+            <span className="text-xs font-bold uppercase tracking-wide text-[#5b6475]">Detective name (shown to other players)</span>
             <input
               id="detective-name"
               value={name}
@@ -169,11 +193,11 @@ export function Welcome({ profiles, onSignUp, onSignIn, onGuest }: Props) {
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Ada Sharp-Eye"
               autoComplete="nickname"
-              className="h-12 rounded-xl border border-line bg-night px-4 text-base text-fg placeholder:text-muted focus:border-kick focus:outline-none"
+              className="h-12 rounded-2xl border border-[#e3e6ec] bg-white px-4 text-base text-[#14161b] placeholder:text-[#9aa2b1] focus:border-[#2457e6] focus:outline-none focus:ring-2 focus:ring-[#2457e6]/25"
             />
           </label>
           <fieldset>
-            <legend className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">Pick your look</legend>
+            <legend className="mb-2 text-xs font-bold uppercase tracking-wide text-[#5b6475]">Pick your look</legend>
             <div className="grid grid-cols-6 gap-2">
               {PLAYER_LOOKS.map((face, i) => (
                 <button
@@ -185,7 +209,7 @@ export function Welcome({ profiles, onSignUp, onSignIn, onGuest }: Props) {
                   }}
                   aria-pressed={look === i}
                   aria-label={`Look ${i + 1}`}
-                  className={`aspect-square overflow-hidden rounded-full transition active:scale-90 ${look === i ? "ring-3 ring-kick" : "ring-1 ring-line opacity-70"}`}
+                  className={`aspect-square overflow-hidden rounded-full transition active:scale-90 ${look === i ? "ring-[3px] ring-[#2457e6]" : "ring-1 ring-[#e3e6ec] opacity-70"}`}
                 >
                   <Avatar face={face} className="size-full" />
                 </button>
@@ -195,7 +219,8 @@ export function Welcome({ profiles, onSignUp, onSignIn, onGuest }: Props) {
           <button
             type="submit"
             disabled={!ready}
-            className="h-12 rounded-full bg-kick font-extrabold text-ink shadow-[0_10px_24px_-14px_rgba(20,22,27,0.6)] transition enabled:active:scale-95 disabled:bg-raise disabled:text-muted disabled:shadow-none"
+            className="h-14 rounded-full text-[16px] font-bold text-white shadow-[0_12px_24px_-12px_rgba(36,87,230,0.8)] transition enabled:active:scale-[0.98] disabled:opacity-45 disabled:shadow-none"
+            style={{ background: DOOR_BLUE }}
           >
             {busy ? "Creating your account…" : ready ? `Oya, join Panti as Constable ${trimmed.split(" ")[0]}!` : !fullOk ? "Type your full name first" : !emailOk ? "Add your email" : !pwOk ? "Choose a password (8+ characters)" : !pwMatch ? "Passwords must match" : "Pick a detective name"}
           </button>
@@ -209,10 +234,10 @@ export function Welcome({ profiles, onSignUp, onSignIn, onGuest }: Props) {
           </p>
         </form>
       ) : (
-        <div className="mt-5 flex flex-col gap-2">
+        <div className="relative mt-5 flex flex-col gap-2">
           {cloud && (
             <form
-              className="mb-3 flex flex-col gap-2 rounded-2xl border border-line bg-card p-3"
+              className="mb-3 flex flex-col gap-2.5 rounded-3xl bg-white p-4 shadow-[0_18px_40px_-28px_rgba(20,22,27,0.5)]"
               onSubmit={async (e) => {
                 e.preventDefault();
                 setBusy(true);
@@ -229,13 +254,13 @@ export function Welcome({ profiles, onSignUp, onSignIn, onGuest }: Props) {
                 window.location.reload();
               }}
             >
-              <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-muted">
+              <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-[#5b6475]">
                 <KeyRound className="size-3.5" /> Sign in with email
               </span>
-              <input type="email" value={inEmail} onChange={(e) => setInEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" inputMode="email" className="h-11 rounded-xl border border-line bg-night px-3 text-base focus:border-kick focus:outline-none" aria-label="Email" />
-              <input type="password" value={inPassword} onChange={(e) => setInPassword(e.target.value)} placeholder="Password" autoComplete="current-password" className="h-11 rounded-xl border border-line bg-night px-3 text-base focus:border-kick focus:outline-none" aria-label="Password" />
+              <input type="email" value={inEmail} onChange={(e) => setInEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" inputMode="email" className="h-11 rounded-2xl border border-[#e3e6ec] bg-white px-4 text-base focus:border-[#2457e6] focus:outline-none focus:ring-2 focus:ring-[#2457e6]/25" aria-label="Email" />
+              <input type="password" value={inPassword} onChange={(e) => setInPassword(e.target.value)} placeholder="Password" autoComplete="current-password" className="h-11 rounded-2xl border border-[#e3e6ec] bg-white px-4 text-base focus:border-[#2457e6] focus:outline-none focus:ring-2 focus:ring-[#2457e6]/25" aria-label="Password" />
               {inError && <p className="text-xs font-semibold text-danger">{inError}</p>}
-              <button disabled={busy || !inEmail || !inPassword} className="h-11 rounded-full bg-kick font-extrabold text-ink transition enabled:active:scale-95 disabled:bg-raise disabled:text-muted">
+              <button disabled={busy || !inEmail || !inPassword} className="h-14 rounded-full text-[16px] font-bold text-white shadow-[0_12px_24px_-12px_rgba(36,87,230,0.8)] transition enabled:active:scale-[0.98] disabled:opacity-45" style={{ background: DOOR_BLUE }}>
                 {busy ? "Signing in…" : "Sign in"}
               </button>
               <button
@@ -245,7 +270,7 @@ export function Welcome({ profiles, onSignUp, onSignIn, onGuest }: Props) {
                   setForgot("…");
                   setForgot(await supportContact());
                 }}
-                className="text-xs font-bold text-muted underline"
+                className="text-sm font-semibold underline" style={{ color: DOOR_BLUE }}
               >
                 Forgot password?
               </button>
@@ -262,11 +287,11 @@ export function Welcome({ profiles, onSignUp, onSignIn, onGuest }: Props) {
               )}
             </form>
           )}
-          {cloud && profiles.length > 0 && <span className="text-xs font-bold uppercase tracking-wide text-muted">Detectives on this device</span>}
+          {cloud && profiles.length > 0 && <span className="text-xs font-bold uppercase tracking-wide text-[#5b6475]">Detectives on this device</span>}
           {profiles.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-line p-5 text-center text-sm text-neutral-600">
+            <div className="rounded-2xl border border-dashed border-[#cdd3df] bg-white/70 p-5 text-center text-sm text-[#5b6475]">
               No detective don register here yet.{" "}
-              <button onClick={() => switchTab("up")} className="font-bold text-kick underline">
+              <button onClick={() => switchTab("up")} className="font-bold underline" style={{ color: DOOR_BLUE }}>
                 Sign up first
               </button>
               , or just play as guest.
@@ -281,9 +306,9 @@ export function Welcome({ profiles, onSignUp, onSignIn, onGuest }: Props) {
                     sfx.whoosh();
                     onSignIn(p.id);
                   }}
-                  className="flex items-center gap-3 rounded-2xl border border-line bg-card p-3 text-left transition hover:border-kick active:scale-[0.98]"
+                  className="flex items-center gap-3 rounded-2xl bg-white p-3 text-left shadow-sm transition hover:ring-2 hover:ring-[#2457e6]/30 active:scale-[0.98]"
                 >
-                  <div className="size-12 shrink-0 overflow-hidden rounded-full ring-2 ring-kick">
+                  <div className="size-12 shrink-0 overflow-hidden rounded-full ring-2 ring-[#2457e6]">
                     <Avatar face={profileFace(p)} className="size-full" />
                   </div>
                   <div className="min-w-0 flex-1">
@@ -305,9 +330,18 @@ export function Welcome({ profiles, onSignUp, onSignIn, onGuest }: Props) {
           sfx.whoosh();
           onGuest();
         }}
-        className="mx-auto mt-6 text-sm font-bold text-neutral-600 underline decoration-line underline-offset-4 hover:text-fg"
+        className="relative mx-auto mt-6 text-sm font-semibold text-[#5b6475] underline decoration-[#cdd3df] underline-offset-4 hover:text-[#14161b]"
       >
         Skip am, play as guest
+      </button>
+      <button
+        onClick={() => {
+          sfx.tap();
+          setIntro(true);
+        }}
+        className="relative mx-auto mt-2 text-xs font-semibold text-[#9aa2b1]"
+      >
+        See the intro again
       </button>
     </div>
   );
@@ -322,5 +356,23 @@ async function supportContact(): Promise<string> {
     return typeof d?.support === "string" ? d.support.slice(0, 160) : "";
   } catch {
     return "";
+  }
+}
+
+const INTRO_KEY = "crime-life:intro-seen";
+
+function seenIntro() {
+  try {
+    return window.localStorage.getItem(INTRO_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function markIntroSeen() {
+  try {
+    window.localStorage.setItem(INTRO_KEY, "1");
+  } catch {
+    // only a convenience
   }
 }
