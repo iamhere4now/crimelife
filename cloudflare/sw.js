@@ -7,7 +7,7 @@
 //
 // The API (/api/...) is never cached.
 
-const VERSION = "0fa6bab1c3c4";
+const VERSION = "de32a8d484ea";
 const CACHE = `nd-${VERSION}`;
 const SHELL = ["/", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/badge-96.png"];
 

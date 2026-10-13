@@ -134,7 +134,7 @@ export function watchBoard(cb: (rows: BoardRow[] | null) => void): Unsub {
                 weekXp: num(v.weekXp, 0, 50_000),
                 prevWeek: typeof v.prevWeek === "string" ? v.prevWeek.slice(0, 8) : undefined,
                 prevWeekXp: num(v.prevWeekXp, 0, 50_000),
-                updatedAt: num(v.updatedAt, 0),
+                updatedAt: num(v.updatedAt, 0, 1e13),
                 me: d.id === s.id,
               } as BoardRow;
             })

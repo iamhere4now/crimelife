@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, Clock, Crown, Gift, Medal, Trophy, Wifi, WifiOff } from "lucide-react";
+import { Banknote, Bot, Clock, FolderCheck, Gem, Gift, Medal, RefreshCw, Trophy, Wifi, WifiOff } from "lucide-react";
 import { useEffect, useState } from "react";
 import { watchBoard, type BoardRow } from "@/lib/board";
 import { BADGES } from "@/lib/badges";
@@ -60,10 +60,10 @@ export function LeaderboardView({ state, name, look, face, branch }: { state: Ga
 
   return (
     <div className="px-4 pt-5">
-      <h1 className="flex items-center gap-2 text-2xl font-black">
-        <Trophy className="size-6 text-kick" /> Naija Leaderboard
-      </h1>
-      <p className="mt-1 text-sm text-muted">Real detectives playing this game, from every branch. Your row updates itself as you play.</p>
+      <h1 className="text-center text-2xl font-black tracking-tight">Leaderboard</h1>
+      <p className="mt-0.5 text-center text-sm text-muted">
+        {sort === "week" ? `Weekly tournament · ends in ${timeLeft()}` : `${monthYear()} · every branch`}
+      </p>
 
       <div className="mt-3 flex items-center justify-between gap-2">
         <div className="flex rounded-full bg-raise p-1" role="tablist" aria-label="Rank by">
@@ -80,20 +80,66 @@ export function LeaderboardView({ state, name, look, face, branch }: { state: Ga
               role="tab"
               aria-selected={sort === id}
               onClick={() => setSort(id)}
-              className={`h-8 rounded-full px-3 text-xs font-bold transition ${sort === id ? "bg-fg text-white" : "text-neutral-600"}`}
+              className={`h-8 whitespace-nowrap rounded-full px-2.5 text-xs font-bold transition ${sort === id ? "bg-fg text-white" : "text-neutral-600"}`}
             >
               {label}
             </button>
           ))}
         </div>
-        <span className={`flex items-center gap-1 text-[11px] font-bold ${live ? "text-go" : "text-muted"}`}>
+        <span className={`flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] font-bold ${live ? "text-go" : "text-muted"}`}>
           {live ? <Wifi className="size-3.5" /> : <WifiOff className="size-3.5" />}
-          {rows === "loading" ? "Connecting…" : live ? `${real.length} detective${real.length === 1 ? "" : "s"}` : "Offline"}
+          {rows === "loading" ? "…" : live ? real.length : "Offline"}
         </span>
       </div>
 
+      <Podium top={real.slice(0, 3)} score={(r) => <Score sort={sort} value={key(r)} />} />
+
+      <p className="mt-2 flex items-center justify-center gap-1.5 text-[11px] font-semibold text-muted">
+        <RefreshCw className="size-3" /> Leaderboard updated {ago(Math.max(0, ...real.filter((r) => !r.me).map((r) => r.updatedAt || 0)))}
+      </p>
+
+      {myPlace > 0 && real.length > 1 && (
+        <p className="mt-3 rounded-2xl bg-kick/10 px-3 py-2 text-sm font-semibold">
+          You are <span className="font-black">#{myPlace}</span> of {real.length}.{myPlace > 1 ? ` Beat ${real[myPlace - 2].name} to move up.` : " Na you be Oga!"}
+        </p>
+      )}
+
+      <ol className="mt-3 space-y-2">
+        {real.slice(3, 100).map((r, i) => (
+          <li
+            key={r.id}
+            className={`flex items-center gap-3 rounded-2xl p-2.5 pr-3.5 shadow-[0_6px_18px_-14px_rgba(20,22,27,0.5)] ${r.me ? "bg-kick/10 ring-2 ring-kick" : "bg-card"}`}
+          >
+            <span className="flex w-9 shrink-0 items-center gap-0.5 text-sm font-black tabular-nums text-neutral-700">
+              <Trophy className="size-3.5 text-neutral-400" />
+              {i + 4}
+            </span>
+            <FaceTile row={r} className="size-12" />
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-extrabold">
+                {r.name}
+                {r.me ? " (you)" : ""}
+              </div>
+              <div className="truncate text-xs text-muted">
+                {rankFor(r.xp).name}
+                {r.branch ? ` · ${r.branch}` : ""} · {r.solved} closed
+                {r.badges ? (
+                  <>
+                    {" · "}
+                    <Medal className="inline size-3 align-[-2px]" /> {r.badges}
+                  </>
+                ) : null}
+              </div>
+            </div>
+            <span className={`text-sm font-black tabular-nums ${sort === "balance" && r.balance < 0 ? "text-danger" : ""}`}>
+              <Score sort={sort} value={key(r)} />
+            </span>
+          </li>
+        ))}
+      </ol>
+
       {sort === "week" && (
-        <div className="mt-3 overflow-hidden rounded-3xl p-4 text-white shadow-[0_14px_30px_-18px_rgba(0,0,0,0.6)]" style={{ background: "linear-gradient(120deg, #2457e6, #7a1f6a)" }}>
+        <div className="mt-5 overflow-hidden rounded-3xl p-4 text-white shadow-[0_14px_30px_-18px_rgba(0,0,0,0.6)]" style={{ background: "linear-gradient(120deg, #2457e6, #7a1f6a)" }}>
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/75">Weekly tournament · {thisWeek}</div>
@@ -135,48 +181,6 @@ export function LeaderboardView({ state, name, look, face, branch }: { state: Ga
         </div>
       )}
 
-      {myPlace > 0 && real.length > 1 && (
-        <p className="mt-3 rounded-2xl bg-kick/10 px-3 py-2 text-sm font-semibold">
-          You are <span className="font-black">#{myPlace}</span> of {real.length}.{myPlace > 1 ? ` Beat ${real[myPlace - 2].name} to move up.` : " Na you be Oga!"}
-        </p>
-      )}
-
-      <ol className="mt-3 space-y-2">
-        {real.slice(0, 100).map((r, i) => (
-          <li
-            key={r.id}
-            className={`flex items-center gap-3 rounded-2xl border p-3 ${r.me ? "border-kick bg-kick/10 shadow-[0_10px_24px_-14px_rgba(20,22,27,0.6)]" : "border-line bg-card"}`}
-          >
-            <span className={`w-6 text-center text-lg font-black tabular-nums ${i === 0 ? "text-kick" : "text-muted"}`}>{sort === "week" && i < 3 ? ["🥇", "🥈", "🥉"][i] : i === 0 ? <Crown className="mx-auto size-5" /> : i + 1}</span>
-            <div
-              className={`size-11 shrink-0 overflow-hidden rounded-full ${hasUnlock(r.xp, "frame") ? "ring-[3px] ring-[#e6b422] shadow-[0_0_10px_rgba(230,180,34,0.7)]" : r.me ? "ring-2 ring-kick" : "ring-1 ring-line"}`}
-              title={hasUnlock(r.xp, "frame") ? "Gold Frame (Commissioner and up)" : undefined}
-            >
-              <Avatar face={decodeFace(r.face) ?? lookFace(r.look)} className="size-full" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="truncate font-extrabold">
-                {r.name}
-                {r.me ? " (you)" : ""}
-              </div>
-              <div className="truncate text-xs text-muted">
-                {rankFor(r.xp).name} · ★ {r.rating.toFixed(1)}
-                {r.branch ? ` · ${r.branch}` : ""} · {r.solved} closed
-                {r.badges ? (
-                  <>
-                    {" · "}
-                    <Medal className="inline size-3 align-[-2px]" /> {r.badges}
-                  </>
-                ) : null}
-              </div>
-            </div>
-            <span className={`text-sm font-black tabular-nums ${r.balance < 0 ? "text-danger" : r.me ? "text-kick" : ""}`}>
-              {sort === "week" ? `${Math.round(key(r))} XP` : sort === "balance" ? money(r.balance) : sort === "xp" ? `${Math.round(r.xp)} XP` : `${r.solved}`}
-            </span>
-          </li>
-        ))}
-      </ol>
-
       {!live && rows !== "loading" && (
         <p className="mt-3 rounded-2xl bg-raise px-3 py-2 text-xs text-muted">Open the game on claude.ai to see the other detectives. Here you can only see yourself.</p>
       )}
@@ -201,6 +205,132 @@ export function LeaderboardView({ state, name, look, face, branch }: { state: Ga
         })}
       </ol>
       <p className="mt-4 pb-4 text-center text-[11px] text-muted">{BADGES.length} badges to earn: see Profile.</p>
+    </div>
+  );
+}
+
+const monthYear = () => new Date().toLocaleDateString(undefined, { month: "long", year: "numeric" });
+
+function ago(t: number) {
+  if (!t) return "just now";
+  const m = Math.floor((Date.now() - t) / 60_000);
+  return m < 1 ? "just now" : m < 60 ? `${m}m ago` : m < 1440 ? `${Math.floor(m / 60)}h ago` : `${Math.floor(m / 1440)}d ago`;
+}
+
+/** The score with its little icon: merit as a gem, money in naira, cases as a folder. */
+function Score({ sort, value }: { sort: Sort; value: number }) {
+  if (sort === "balance")
+    return (
+      <span className="inline-flex items-center gap-1">
+        <Banknote className="size-3.5 text-go" />
+        {money(value)}
+      </span>
+    );
+  if (sort === "solved")
+    return (
+      <span className="inline-flex items-center gap-1">
+        <FolderCheck className="size-3.5 text-[#2457e6]" />
+        {value}
+      </span>
+    );
+  return (
+    <span className="inline-flex items-center gap-1">
+      <Gem className="size-3.5 fill-[#8fb8ff] text-[#2f6bff]" />
+      {Math.round(value).toLocaleString()}
+    </span>
+  );
+}
+
+/** A detective's face on a soft rounded tile (gold ring for Commissioner and up). */
+function FaceTile({ row, className = "" }: { row: BoardRow; className?: string }) {
+  const gold = hasUnlock(row.xp, "frame");
+  return (
+    <span
+      className={`relative block shrink-0 overflow-hidden rounded-2xl bg-white p-0.5 shadow-[0_4px_12px_-6px_rgba(20,22,27,0.4)] ${gold ? "ring-[3px] ring-[#e6b422]" : row.me ? "ring-2 ring-kick" : "ring-1 ring-black/5"} ${className}`}
+      title={gold ? "Gold Frame (Commissioner and up)" : undefined}
+    >
+      <span className="block size-full overflow-hidden rounded-[13px] bg-[#eef0f4]">
+        <Avatar face={decodeFace(row.face) ?? lookFace(row.look)} className="size-full" />
+      </span>
+    </span>
+  );
+}
+
+const PODIUM = [
+  // place 2 (left), 1 (middle), 3 (right)
+  { place: 2, height: 112, face: "#b9c5ff", top: "#dfe5ff", ring: "#93a5f5" },
+  { place: 1, height: 150, face: "#f8c514", top: "#fde68a", ring: "#e6b422" },
+  { place: 3, height: 96, face: "#ffab8c", top: "#ffd6c7", ring: "#f08a66" },
+];
+
+/** A little laurel wreath under the podium numbers. */
+function Laurel({ className = "" }: { className?: string }) {
+  const leaves = [0, 1, 2, 3, 4];
+  return (
+    <svg viewBox="0 0 64 28" className={className} aria-hidden="true">
+      {[-1, 1].map((side) => (
+        <g key={side} transform={side === 1 ? "translate(64 0) scale(-1 1)" : undefined}>
+          <path d="M30 26 C18 25 9 18 6 6" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          {leaves.map((i) => {
+            const t = i / 4;
+            const x = 30 - 24 * t + 2;
+            const y = 26 - 20 * t * t - 1;
+            return <ellipse key={i} cx={x - 3} cy={y - 2} rx="5" ry="2.2" transform={`rotate(${-35 - i * 12} ${x - 3} ${y - 2})`} fill="currentColor" />;
+          })}
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+/** The top three on a sunlit podium: gold in the middle, then silver-blue and coral. */
+function Podium({ top, score }: { top: BoardRow[]; score: (r: BoardRow) => React.ReactNode }) {
+  return (
+    <div className="relative mt-3 overflow-hidden rounded-[28px] bg-[#fbf6ea] px-2 pt-5">
+      {/* the sunburst behind the winners */}
+      <div
+        className="pointer-events-none absolute inset-0"
+        aria-hidden="true"
+        style={{
+          background: "repeating-conic-gradient(from 0deg at 50% 38%, rgba(255,255,255,0) 0deg 7deg, rgba(255,255,255,0.75) 7deg 11deg)",
+          WebkitMaskImage: "radial-gradient(circle at 50% 38%, #000 0%, #000 30%, transparent 72%)",
+          maskImage: "radial-gradient(circle at 50% 38%, #000 0%, #000 30%, transparent 72%)",
+        }}
+      />
+      <div className="relative grid grid-cols-3 items-end">
+        {PODIUM.map((p) => {
+          const r = top[p.place - 1];
+          return (
+            <div key={p.place} className="flex min-w-0 flex-col items-center">
+              {/* who stands here */}
+              <div className="flex w-full min-w-0 flex-col items-center px-1 pb-2 text-center">
+                <span className="relative">
+                  <span className="absolute -top-1.5 left-1/2 z-10 size-2.5 -translate-x-1/2 rounded-full border-2 border-white" style={{ background: p.ring }} />
+                  {r ? (
+                    <FaceTile row={r} className={p.place === 1 ? "size-16" : "size-14"} />
+                  ) : (
+                    <span className={`grid place-items-center rounded-2xl border-2 border-dashed border-black/10 text-lg text-black/25 ${p.place === 1 ? "size-16" : "size-14"}`}>?</span>
+                  )}
+                </span>
+                <span className="mt-1.5 w-full truncate text-[13px] font-extrabold">{r ? `${r.name}${r.me ? " (you)" : ""}` : "Open spot"}</span>
+                <span className="text-xs font-bold text-neutral-600 tabular-nums">{r ? score(r) : "—"}</span>
+              </div>
+              {/* the block: a lighter top face, then the front fading into the page */}
+              <div className="w-full">
+                <div className="h-3.5 w-full" style={{ background: p.top, clipPath: p.place === 1 ? "polygon(4% 0, 96% 0, 100% 100%, 0 100%)" : p.place === 2 ? "polygon(10% 0, 100% 0, 100% 100%, 0 100%)" : "polygon(0 0, 90% 0, 100% 100%, 0 100%)" }} />
+                <div
+                  className="flex w-full flex-col items-center pt-3 text-white"
+                  style={{ height: p.height, background: `linear-gradient(180deg, ${p.face} 0%, ${p.face} 45%, ${p.face}00 100%)` }}
+                >
+                  <span className="text-[9px] leading-none tracking-[0.2em] opacity-90" aria-hidden="true">★★★</span>
+                  <span className={`font-black leading-none drop-shadow-[0_2px_0_rgba(0,0,0,0.08)] ${p.place === 1 ? "text-6xl" : "text-5xl"}`}>{p.place}</span>
+                  <Laurel className="-mt-0.5 h-6 w-16 opacity-95" />
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
