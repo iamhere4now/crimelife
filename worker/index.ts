@@ -8,6 +8,7 @@
  *   /api/col?path=        list the documents in a collection       (D1)
  *   /api/room/<name>      live room over a WebSocket: presence     (Durable Object)
  *   /api/ask              the Senior Inspector's answers           (Claude API, optional)
+ *   /api/push/...         home-screen reminders (Web Push), sent by the cron trigger
  *   /media/<key>          poster images                            (R2, optional)
  * Everything else is the game itself (static assets in ./cloudflare).
  *
@@ -62,6 +63,12 @@ function schema(env: Env) {
     env.DB.prepare("CREATE TABLE IF NOT EXISTS bans (uid TEXT PRIMARY KEY, at INTEGER NOT NULL, note TEXT)").bind(),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS accounts (email TEXT PRIMARY KEY, uid TEXT NOT NULL UNIQUE, pw_hash TEXT NOT NULL, salt TEXT NOT NULL, iters INTEGER NOT NULL, full_name TEXT, created INTEGER NOT NULL, changed INTEGER NOT NULL)").bind(),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, uid TEXT NOT NULL, created INTEGER NOT NULL)").bind(),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)").bind(),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS push_subs (endpoint TEXT PRIMARY KEY, uid TEXT NOT NULL, created INTEGER NOT NULL)").bind(),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS push_subs_uid ON push_subs(uid)").bind(),
+    env.DB.prepare(
+      "CREATE TABLE IF NOT EXISTS push_jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, created INTEGER NOT NULL, started INTEGER, finished INTEGER, cursor TEXT NOT NULL DEFAULT '', sent INTEGER NOT NULL DEFAULT 0, gone INTEGER NOT NULL DEFAULT 0)",
+    ).bind(),
   ]).catch((e) => {
     ready = null;
     throw e;
@@ -268,6 +275,17 @@ async function api(req: Request, env: Env, ctx: { waitUntil(p: Promise<unknown>)
     return json({ uid: acc.uid, token: await newSession(env, acc.uid), email });
   }
 
+  /* ---- reminders: the public key for subscribing, and the message a push is about */
+  if (route === "push/key") return json({ key: (await vapidKeys(env)).publicKey });
+  if (route === "push/latest") {
+    const row = await env.DB.prepare(
+      "SELECT title, body FROM push_jobs WHERE started IS NOT NULL AND (finished IS NULL OR finished > ?) ORDER BY finished IS NULL DESC, finished DESC LIMIT 1",
+    )
+      .bind(Date.now() - 6 * 3_600_000)
+      .first<{ title: string; body: string }>();
+    return json(row ?? { title: "Naija Detective", body: "New cases are waiting for you, Detective." });
+  }
+
   // live rooms: a WebSocket can't send headers, so it brings a one-minute, one-use ticket
   if (route.startsWith("room/")) {
     const name = route.slice(5);
@@ -293,7 +311,33 @@ async function api(req: Request, env: Env, ctx: { waitUntil(p: Promise<unknown>)
       const today = await env.DB.prepare("SELECT COUNT(*) AS n FROM players WHERE created > ?").bind(Date.now() - 86_400_000).first<{ n: number }>();
       const bans = await env.DB.prepare("SELECT uid, at, note FROM bans ORDER BY at DESC LIMIT 200").bind().all<{ uid: string; at: number; note: string }>();
       const accounts = await env.DB.prepare("SELECT COUNT(*) AS n FROM accounts").bind().first<{ n: number }>();
-      return json({ players: players?.n ?? 0, newToday: today?.n ?? 0, accounts: accounts?.n ?? 0, bans: bans.results, media: !!env.MEDIA, ask: !!env.ANTHROPIC_API_KEY });
+      const subs = await env.DB.prepare("SELECT COUNT(*) AS n FROM push_subs").bind().first<{ n: number }>();
+      const jobs = await env.DB.prepare("SELECT id, kind, title, body, created, finished, sent, gone FROM push_jobs ORDER BY id DESC LIMIT 6").bind().all();
+      const auto = await env.DB.prepare("SELECT value FROM kv WHERE key = 'push:auto'").bind().first<{ value: string }>();
+      return json({
+        players: players?.n ?? 0,
+        newToday: today?.n ?? 0,
+        accounts: accounts?.n ?? 0,
+        bans: bans.results,
+        media: !!env.MEDIA,
+        ask: !!env.ANTHROPIC_API_KEY,
+        push: { subscribers: subs?.n ?? 0, auto: auto?.value !== "off", jobs: jobs.results },
+      });
+    }
+    if (route === "admin/push" && req.method === "POST") {
+      const body = (await req.json().catch(() => ({}))) as { title?: unknown; body?: unknown };
+      const title = typeof body.title === "string" ? body.title.trim().slice(0, 60) : "";
+      const text = typeof body.body === "string" ? body.body.trim().slice(0, 160) : "";
+      if (!title || !text) return fail("invalid_argument", 400);
+      const waiting = await env.DB.prepare("SELECT COUNT(*) AS n FROM push_jobs WHERE finished IS NULL").bind().first<{ n: number }>();
+      if ((waiting?.n ?? 0) >= 3) return fail("rate_limited", 429);
+      await env.DB.prepare("INSERT INTO push_jobs (kind, title, body, created) VALUES ('owner', ?, ?, ?)").bind(title, text, Date.now()).run();
+      return json({ ok: true });
+    }
+    if (route === "admin/push-auto" && req.method === "POST") {
+      const body = (await req.json().catch(() => ({}))) as { on?: unknown };
+      await env.DB.prepare("INSERT INTO kv (key, value) VALUES ('push:auto', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(body.on === false ? "off" : "on").run();
+      return json({ ok: true });
     }
     if (route === "admin/reset-password" && req.method === "POST") {
       const body = (await req.json().catch(() => ({}))) as { email?: unknown; password?: unknown };
@@ -346,6 +390,27 @@ async function api(req: Request, env: Env, ctx: { waitUntil(p: Promise<unknown>)
   if (route === "me") {
     const acc = await env.DB.prepare("SELECT email FROM accounts WHERE uid = ?").bind(who.uid).first<{ email: string }>();
     return json({ uid: who.uid, owner: who.owner, ownerSet: !!env.ADMIN_KEY, email: acc?.email ?? null });
+  }
+
+  /* ---- reminders on this device */
+  if (route === "push/subscribe" && req.method === "POST") {
+    if (!(await allow(env, `push:${who.uid}`, 20, 3_600_000))) return fail("rate_limited", 429);
+    const body = (await req.json().catch(() => ({}))) as { endpoint?: unknown };
+    const endpoint = typeof body.endpoint === "string" ? body.endpoint : "";
+    if (!pushEndpointOk(endpoint)) return fail("invalid_argument", 400);
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO push_subs (endpoint, uid, created) VALUES (?, ?, ?) ON CONFLICT(endpoint) DO UPDATE SET uid = excluded.uid, created = excluded.created").bind(endpoint, who.uid, Date.now()),
+      // at most 5 devices a player
+      env.DB.prepare("DELETE FROM push_subs WHERE uid = ?1 AND endpoint NOT IN (SELECT endpoint FROM push_subs WHERE uid = ?1 ORDER BY created DESC LIMIT 5)").bind(who.uid),
+      // the cron trigger signs its pushes with the game's address
+      env.DB.prepare("INSERT INTO kv (key, value) VALUES ('site', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(url.origin),
+    ]);
+    return json({ ok: true });
+  }
+  if (route === "push/unsubscribe" && req.method === "POST") {
+    const body = (await req.json().catch(() => ({}))) as { endpoint?: unknown };
+    await env.DB.prepare("DELETE FROM push_subs WHERE endpoint = ? AND uid = ?").bind(typeof body.endpoint === "string" ? body.endpoint : "", who.uid).run();
+    return json({ ok: true });
   }
 
   /* ---- email + password for this player (their progress stays with them) */
@@ -477,6 +542,132 @@ async function ask(req: Request, env: Env, uid: string, ip: string) {
   return json({ text: (out.content ?? []).filter((c) => c.type === "text").map((c) => c.text).join("") });
 }
 
+/* ---------------------------------------------------------------- reminders (Web Push) */
+
+/*
+ * Pushes carry no message (so nothing needs encrypting): the phone wakes the
+ * game's service worker, which asks /api/push/latest what to show. Each push is
+ * signed with the game's own VAPID key, made once and kept in D1. The cron
+ * trigger (every minute) sends one batch of the oldest waiting job per run,
+ * within the free plan's 50 outside requests a run.
+ */
+
+const PUSH_BATCH = 40;
+
+// only the browsers' own push services, so nobody can point the Worker at other addresses
+const PUSH_HOSTS = [/^fcm\.googleapis\.com$/, /^android\.googleapis\.com$/, /^updates\.push\.services\.mozilla\.com$/, /^push\.services\.mozilla\.com$/, /(^|\.)push\.apple\.com$/, /\.notify\.windows\.com$/];
+
+function pushEndpointOk(endpoint: string) {
+  if (endpoint.length > 600) return false;
+  try {
+    const u = new URL(endpoint);
+    return u.protocol === "https:" && !u.port && PUSH_HOSTS.some((h) => h.test(u.hostname));
+  } catch {
+    return false;
+  }
+}
+
+const b64url = (bytes: Uint8Array) => b64(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+type VapidKeys = { publicKey: string; jwk: JsonWebKey };
+
+async function vapidKeys(env: Env): Promise<VapidKeys> {
+  const row = await env.DB.prepare("SELECT value FROM kv WHERE key = 'vapid'").bind().first<{ value: string }>();
+  if (row) return JSON.parse(row.value);
+  const pair = (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"])) as CryptoKeyPair;
+  const publicKey = b64url(new Uint8Array((await crypto.subtle.exportKey("raw", pair.publicKey)) as ArrayBuffer));
+  const jwk = (await crypto.subtle.exportKey("jwk", pair.privateKey)) as JsonWebKey;
+  // two first calls at once: the first one written wins, and both read it back
+  await env.DB.prepare("INSERT OR IGNORE INTO kv (key, value) VALUES ('vapid', ?)").bind(JSON.stringify({ publicKey, jwk })).run();
+  const saved = await env.DB.prepare("SELECT value FROM kv WHERE key = 'vapid'").bind().first<{ value: string }>();
+  return JSON.parse(saved!.value);
+}
+
+/** The Authorization header for pushes to one push service: a signed token good for 12 hours. */
+async function vapidHeader(keys: VapidKeys, endpoint: string, site: string) {
+  const enc = (o: unknown) => b64url(new TextEncoder().encode(JSON.stringify(o)));
+  const unsigned = `${enc({ typ: "JWT", alg: "ES256" })}.${enc({ aud: new URL(endpoint).origin, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: site })}`;
+  const key = await crypto.subtle.importKey("jwk", keys.jwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
+  const sig = new Uint8Array(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, new TextEncoder().encode(unsigned)));
+  return `vapid t=${unsigned}.${b64url(sig)}, k=${keys.publicKey}`;
+}
+
+/** Nigerian time (WAT, UTC+1) for the daily reminder. */
+function watNow(at: number) {
+  const d = new Date(at + 3_600_000);
+  return { day: d.toISOString().slice(0, 10), hour: d.getUTCHours(), weekday: d.getUTCDay() };
+}
+
+const DAILY_REMINDERS = [
+  { title: "Today's daily challenge is waiting 🔍", body: "One case, one shot at a bonus. Can you crack it before midnight?" },
+  { title: "Don't break your streak 🔥", body: "Claim today's streak reward and keep the fire burning, Detective." },
+  { title: "Your lucky spin is ready 🎰", body: "Spin for cash, merit or a free hint before midnight." },
+  { title: "Fresh wahala in your state 🚨", body: "New suspects, new lies. The precinct needs you back on the case." },
+  { title: "The leaderboard is moving 🏆", body: "Other detectives are climbing this week's tournament. Don't fall behind." },
+];
+
+/** Once a day, between 6pm and 9pm WAT, queue the day's reminder (unless the owner turned them off). */
+async function queueDailyReminder(env: Env, at: number) {
+  const t = watNow(at);
+  if (t.hour < 18 || t.hour > 20) return;
+  const auto = await env.DB.prepare("SELECT value FROM kv WHERE key = 'push:auto'").bind().first<{ value: string }>();
+  if (auto?.value === "off") return;
+  // only the run that claims today queues it
+  const claimed = await env.DB.prepare(
+    "INSERT INTO kv (key, value) VALUES ('push:last-auto', ?1) ON CONFLICT(key) DO UPDATE SET value = excluded.value WHERE value <> excluded.value RETURNING value",
+  )
+    .bind(t.day)
+    .first();
+  if (!claimed) return;
+  const msg =
+    t.weekday === 0
+      ? { title: "The weekly tournament ends tonight ⏳", body: "Last chance to climb this week's leaderboard. Every arrest counts." }
+      : t.weekday === 1
+        ? { title: "A new tournament week has started 🏆", body: "Everyone starts from zero. Get your first arrest in early." }
+        : DAILY_REMINDERS[Math.floor(at / 86_400_000) % DAILY_REMINDERS.length];
+  await env.DB.prepare("INSERT INTO push_jobs (kind, title, body, created) VALUES ('daily', ?, ?, ?)").bind(msg.title, msg.body, at).run();
+}
+
+/** Send the next batch of the oldest waiting job. */
+async function sendPushBatch(env: Env, at: number) {
+  const job = await env.DB.prepare("SELECT id, created, started, cursor FROM push_jobs WHERE finished IS NULL ORDER BY id LIMIT 1")
+    .bind()
+    .first<{ id: number; created: number; started: number | null; cursor: string }>();
+  if (!job) return;
+  // a reminder that couldn't go out within 12 hours is old news
+  if (job.created < at - 12 * 3_600_000) {
+    await env.DB.prepare("UPDATE push_jobs SET finished = ? WHERE id = ?").bind(at, job.id).run();
+    return;
+  }
+  if (!job.started) await env.DB.prepare("UPDATE push_jobs SET started = ? WHERE id = ?").bind(at, job.id).run();
+  const subs = await env.DB.prepare("SELECT endpoint FROM push_subs WHERE endpoint > ? ORDER BY endpoint LIMIT ?").bind(job.cursor, PUSH_BATCH).all<{ endpoint: string }>();
+  const keys = await vapidKeys(env);
+  const site = (await env.DB.prepare("SELECT value FROM kv WHERE key = 'site'").bind().first<{ value: string }>())?.value ?? "https://workers.dev";
+  const signed = new Map<string, Promise<string>>();
+  let sent = 0;
+  const gone: string[] = [];
+  await Promise.all(
+    subs.results.map(async ({ endpoint }) => {
+      try {
+        const aud = new URL(endpoint).origin;
+        if (!signed.has(aud)) signed.set(aud, vapidHeader(keys, endpoint, site));
+        const r = await fetch(endpoint, { method: "POST", headers: { authorization: await signed.get(aud)!, ttl: "43200", urgency: "normal", "content-length": "0" } });
+        if (r.ok) sent++;
+        else if (r.status === 404 || r.status === 410) gone.push(endpoint);
+        else console.warn("[push]", r.status, aud, await r.text().catch(() => ""));
+      } catch (e) {
+        console.warn("[push] failed", e);
+      }
+    }),
+  );
+  const last = subs.results[subs.results.length - 1]?.endpoint ?? job.cursor;
+  await env.DB.batch([
+    env.DB.prepare("UPDATE push_jobs SET cursor = ?, sent = sent + ?, gone = gone + ?, finished = ? WHERE id = ?").bind(last, sent, gone.length, subs.results.length < PUSH_BATCH ? Date.now() : null, job.id),
+    // phones that uninstalled the game or turned its notifications off
+    ...gone.map((e) => env.DB.prepare("DELETE FROM push_subs WHERE endpoint = ?").bind(e)),
+  ]);
+}
+
 /* ---------------------------------------------------------------- the Worker */
 
 export default {
@@ -497,6 +688,17 @@ export default {
       return fail("server_error", 500);
     }
     return env.ASSETS.fetch(req);
+  },
+
+  /** The cron trigger (wrangler.jsonc): queue the daily reminder, then send a batch of pushes. */
+  async scheduled(event: { scheduledTime: number }, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) {
+    ctx.waitUntil(
+      (async () => {
+        await schema(env);
+        await queueDailyReminder(env, event.scheduledTime);
+        await sendPushBatch(env, event.scheduledTime);
+      })().catch((e) => console.error("[cron]", e)),
+    );
   },
 };
 

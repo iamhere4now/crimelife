@@ -1,0 +1,18 @@
+{
+  "name": "Naija Detective",
+  "short_name": "Naija Detective",
+  "description": "Crack crime scenes across all 36 states and the FCT. Find the clues, break the lies, make the arrest.",
+  "id": "/",
+  "start_url": "/?source=home",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#2457e6",
+  "theme_color": "#e4e6ea",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

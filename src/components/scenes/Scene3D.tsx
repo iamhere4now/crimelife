@@ -10,6 +10,7 @@ import { kitOf } from "@/three/sceneKits";
 import { CAMERA_POS, CAMERA_TARGET, FOV, type PersonLook } from "@/three/world";
 import { CaseScene } from "./CrimeScene";
 import { setLiveScene } from "./SceneThumb";
+import { isLite } from "@/lib/lite";
 
 export interface Anchor {
   id: string;
@@ -39,6 +40,8 @@ export interface CrewSpec {
 
 let webgl: boolean | undefined;
 export function hasWebGL() {
+  // lite mode: the drawn scenes everywhere
+  if (isLite()) return false;
   if (webgl === undefined) {
     try {
       const c = document.createElement("canvas");

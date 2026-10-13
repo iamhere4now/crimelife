@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Naija Detective app icon: a magnifying glass over the green-white-green, on the game's blue.
+       Everything important sits inside the middle 70% so the "maskable" crop keeps it. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2f6bff"/>
+      <stop offset="1" stop-color="#1b3fb8"/>
+    </linearGradient>
+    <clipPath id="lens"><circle cx="226" cy="222" r="92"/></clipPath>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <circle cx="440" cy="70" r="120" fill="#ffffff" opacity="0.08"/>
+  <circle cx="60" cy="460" r="110" fill="#ffffff" opacity="0.07"/>
+  <!-- the flag seen through the lens -->
+  <g clip-path="url(#lens)">
+    <rect x="130" y="126" width="64" height="192" fill="#008751"/>
+    <rect x="194" y="126" width="64" height="192" fill="#ffffff"/>
+    <rect x="258" y="126" width="64" height="192" fill="#008751"/>
+  </g>
+  <!-- glass rim and handle -->
+  <circle cx="226" cy="222" r="92" fill="none" stroke="#ffffff" stroke-width="26"/>
+  <path d="M294 290 L372 368" stroke="#ffffff" stroke-width="40" stroke-linecap="round"/>
+  <path d="M300 296 L366 362" stroke="#f5c518" stroke-width="18" stroke-linecap="round"/>
+  <!-- shine -->
+  <path d="M176 186 A62 62 0 0 1 214 158" fill="none" stroke="#ffffff" stroke-width="12" stroke-linecap="round" opacity="0.85"/>
+</svg>

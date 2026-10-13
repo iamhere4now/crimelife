@@ -18,6 +18,18 @@ interface Overview {
   bans: { uid: string; at: number; note: string }[];
   media: boolean;
   ask: boolean;
+  push?: { subscribers: number; auto: boolean; jobs: PushJob[] };
+}
+
+interface PushJob {
+  id: number;
+  kind: string;
+  title: string;
+  body: string;
+  created: number;
+  finished: number | null;
+  sent: number;
+  gone: number;
 }
 
 const str = (v: unknown) => (typeof v === "string" ? v : "");
@@ -130,6 +142,8 @@ export function OwnerConsole({ onClose, onAds, onGrant }: { onClose: () => void;
             <Signups />
 
             <ResetPassword onDone={(t) => setNote(t)} />
+
+            <Reminders push={over?.push} act={act} />
 
             {/* leaderboard moderation */}
             <section className="soft rounded-2xl bg-card p-3">
@@ -288,6 +302,52 @@ function ResetPassword({ onDone }: { onDone: (note: string) => void }) {
           {busy ? "Resetting…" : "Reset password"}
         </button>
       </form>
+    </section>
+  );
+}
+
+/** Home-screen reminders: how many phones get them, the daily one, and a message to everyone. */
+function Reminders({ push, act }: { push?: Overview["push"]; act: (fn: () => Promise<unknown>, done: string) => Promise<void> }) {
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  return (
+    <section className="soft rounded-2xl bg-card p-3">
+      <h3 className="text-sm font-bold">🔔 Reminders ({push?.subscribers ?? 0} phones)</h3>
+      <p className="text-[11px] text-muted">Players who turned on reminders in Profile › App &amp; data. A daily one goes out around 6pm Nigerian time; Sundays remind them the tournament ends, Mondays that a new one started.</p>
+      <label className="mt-2 flex items-center gap-2 text-xs font-semibold">
+        <input type="checkbox" checked={push?.auto ?? true} onChange={(e) => void act(() => adminCall("push-auto", { on: e.target.checked }), e.target.checked ? "Daily reminders on." : "Daily reminders off.")} />
+        Send the daily reminder
+      </label>
+      <form
+        className="mt-3 flex flex-col gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!window.confirm(`Send "${title}" to ${push?.subscribers ?? 0} phones?`)) return;
+          void act(() => adminCall("push", { title, body }), "Message queued. It goes out within a few minutes.").then(() => {
+            setTitle("");
+            setBody("");
+          });
+        }}
+      >
+        <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={60} placeholder="Title, e.g. New Kano cases are live 🚨" className="h-10 rounded-xl bg-raise px-3 text-sm focus:outline-none" aria-label="Reminder title" />
+        <textarea value={body} onChange={(e) => setBody(e.target.value)} maxLength={160} rows={2} placeholder="Message (up to 160 letters)" className="rounded-xl bg-raise px-3 py-2 text-sm focus:outline-none" aria-label="Reminder message" />
+        <button disabled={!title.trim() || !body.trim()} className="h-10 rounded-full bg-fg text-xs font-bold text-white disabled:opacity-50">
+          Send to everyone
+        </button>
+      </form>
+      {!!push?.jobs.length && (
+        <ul className="mt-3 divide-y divide-line text-xs">
+          {push.jobs.map((j) => (
+            <li key={j.id} className="py-1.5">
+              <span className="block truncate font-semibold">{j.title}</span>
+              <span className="text-muted">
+                {j.kind === "daily" ? "Daily" : "You"} · {new Date(j.created).toLocaleString()} · {j.finished ? `sent to ${j.sent}` : `sending (${j.sent} so far)`}
+                {j.gone ? ` · ${j.gone} phones gone` : ""}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }

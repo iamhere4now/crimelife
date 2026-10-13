@@ -5,6 +5,7 @@
  * first use, through the shared audio context, so it follows the mute button.
  */
 
+import { isLite } from "./lite";
 import { audioContext, isMuted } from "./SoundEffects";
 
 let bufferPromise: Promise<AudioBuffer | null> | null = null;
@@ -59,7 +60,7 @@ const SILENT: RoadHandle = { setLevel: () => {}, stop: () => {} };
  */
 export function playRoad(level: number, opts: { into?: AudioNode; muffle?: boolean } = {}): RoadHandle {
   const ac = audioContext();
-  if (!ac || isMuted()) return SILENT;
+  if (!ac || isMuted() || isLite()) return SILENT;
   const out = ac.createGain();
   out.gain.value = 0.0001;
   let tail: AudioNode = out;

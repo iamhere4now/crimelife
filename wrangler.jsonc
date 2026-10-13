@@ -30,5 +30,7 @@
     "bindings": [{ "name": "ROOMS", "class_name": "Room" }]
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }],
+  // every minute: queue the daily 6pm reminder and send the next batch of home-screen pushes
+  "triggers": { "crons": ["* * * * *"] },
   "observability": { "enabled": true }
 }

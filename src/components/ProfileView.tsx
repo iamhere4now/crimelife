@@ -8,6 +8,7 @@ import { money } from "@/lib/format";
 import { LOSS_LIMIT, RANKS, rankFor, rankIndex, rankProgress, XP_ARREST, XP_LIE, XP_STAR } from "@/lib/ranks";
 import type { Face, GameState } from "@/lib/types";
 import { AccountCard } from "./AccountCard";
+import { AppSettings } from "./AppSettings";
 import { Avatar } from "./Avatar";
 import { Insignia } from "./RankViews";
 import { Stars } from "./ui";
@@ -175,6 +176,8 @@ export function ProfileView({ state, name, face, onToggleMute, onSwitch, onAdver
         <Tile label="Money earned" value={money(stats.earned)} good />
         <Tile label="IA fines" value={stats.fines ? `-${money(stats.fines)}` : "₦0"} bad={stats.fines > 0} />
       </div>
+
+      <AppSettings />
 
       <div className="mt-4 divide-y divide-line/60 rounded-2xl border border-line bg-card">
         <button onClick={onToggleMute} className="flex w-full items-center justify-between p-4 text-left">

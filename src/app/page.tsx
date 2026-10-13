@@ -13,6 +13,7 @@ import { DossierView } from "@/components/DossierView";
 import { HelpSheet } from "@/components/HelpSheet";
 import { Header } from "@/components/Header";
 import { LeaderboardView } from "@/components/LeaderboardView";
+import { InstallBanner } from "@/components/AppSettings";
 import { ModesRow } from "@/components/ModesRow";
 import { NaijaFilesCard } from "@/components/NaijaFilesCard";
 import { ProfileView } from "@/components/ProfileView";
@@ -469,6 +470,8 @@ export default function Home() {
               />
             )}
             <CaseCarousel cases={carousel} state={state} onOpen={openCase} />
+
+            {state.solved.length > 0 && <InstallBanner />}
 
             <DailyCard
               state={state}

@@ -29,6 +29,8 @@ On Cloudflare the game runs on your own account, not on claude.ai.
 | Poster images | **R2** bucket `crimelife-media`, served at `/media/...` (optional; until R2 is on they stay in D1) |
 | Co-op rooms, who's online, live list updates | **Durable Objects** (`Room`) |
 | Senior Inspector questions | Claude API, if you set `ANTHROPIC_API_KEY`; otherwise scripted tips |
+| Install on the home screen, offline start | `cloudflare/manifest.webmanifest`, `cloudflare/icons/`, `cloudflare/sw.js` (from `artifact/sw.js`) |
+| Reminders | Web Push, sent by the Worker's **cron trigger** (every minute) |
 
 `src/lib/cfRuntime.ts` gives the game the same small `window.claude` interface it uses on claude.ai, backed by the Worker. That means the rest of the game is unchanged.
 
@@ -46,7 +48,14 @@ On Cloudflare the game runs on your own account, not on claude.ai.
 
 The **Owner console** shows player counts and sign-ups (Copy emails, Download CSV). From it you can open the Ad manager, remove leaderboard rows or chat, and ban or unban players. A ban stops posting, chat, leaderboard and co-op; they can still play alone. It also has test tools: +₦, +XP and Jump to General.
 
-The Ad manager can also be opened from Advertise → "Owner? Sign in".
+The Ad manager opens only from the Owner console. Players never see an owner sign-in.
+
+**Home screen and reminders** (`src/lib/pwa.ts`, `src/components/AppSettings.tsx`):
+- **Install:** Profile › App & data has "Add to home screen" (Android/Chrome) or the Safari steps (iPhone). Home shows a small install card once a player has closed a case. The page is kept for offline starts; `/api` is never cached.
+- **Reminders:** players turn them on in Profile › App & data. On iPhone this works only from the home-screen app. A daily reminder goes out between 6pm and 9pm Nigerian time (Sunday: the tournament ends tonight; Monday: a new week started). In the Owner console, under **Reminders**, you can send your own message to everyone, turn the daily one off, and see how many phones each message reached.
+- **How it works:** pushes carry no text. The phone wakes `sw.js`, which asks `/api/push/latest` what to show. Pushes are signed with the game's own VAPID key, which the Worker makes once and keeps in D1, so there is nothing to set up. The cron sends 40 a minute, within the free plan's limit of 50 outside requests a run. Phones that uninstalled are removed. Subscriptions are accepted only for the browsers' own push services (Google, Mozilla, Apple, Microsoft).
+- **Lite mode** (`src/lib/lite.ts`): Profile › App & data. It shows drawn scenes instead of 3D and turns off the street recording. It switches on by itself when the phone's Data Saver is on, unless the player has chosen.
+- Icons: edit `artifact/icon.svg`, then run `node artifact/make-icons.mjs`.
 
 **Security:**
 - Owner password: 10 wrong tries an hour from one address locks that address out.
@@ -71,7 +80,7 @@ npm run build:cloudflare && npx wrangler deploy
 
 **Deploying from Git** (Workers Builds): set **Build command** to `npm run build:cloudflare` and **Deploy command** to `npx wrangler deploy`.
 
-**Local test:** copy `.dev.vars.example` to `.dev.vars`, then run `npx wrangler dev`. The database, storage and rooms are simulated on your computer.
+**Local test:** copy `.dev.vars.example` to `.dev.vars`, then run `npx wrangler dev --test-scheduled`. The database, storage and rooms are simulated on your computer. To run the cron once: `curl "http://127.0.0.1:8787/cdn-cgi/handler/scheduled?cron=*+*+*+*+*"`.
 
 ## How it plays
 

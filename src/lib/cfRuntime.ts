@@ -161,6 +161,9 @@ export const ACCOUNT_MESSAGES: Record<AccountError, string> = {
   offline: "Couldn't reach the server. Check your connection and try again.",
 };
 
+/** A signed-in call to the Worker (reminders and the like). */
+export const apiCall = (path: string, init: RequestInit = {}) => call(path, init);
+
 /** Owner-only calls (the owner console): overview, bans. */
 export function adminCall(path: string, body?: unknown) {
   return call(`/api/admin/${path}`, body === undefined ? {} : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
