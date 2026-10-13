@@ -190,13 +190,18 @@ export default function Home() {
       }
       sfx.whoosh();
       setOpenId(id);
+      openedAt.current[id] = Date.now();
     },
     [state, notify],
   );
 
+  // when each case was opened this visit, for "cracked in 3m 12s" on the share card
+  const openedAt = useRef<Record<string, number>>({});
+  const solvedIn = useRef(0);
   const accuse = useCallback(
     (suspectId: string) => {
       const v = game.accuse(openId!, suspectId);
+      solvedIn.current = (Date.now() - (openedAt.current[openId!] ?? Date.now() - 300_000)) / 1000;
       if (v.kind === "correct") {
         sfx.success();
         window.setTimeout(() => confetti({ count: 150 }), 250);
@@ -267,7 +272,7 @@ export default function Home() {
   useEffect(() => {
     if (!active) return;
     const t = window.setTimeout(
-      () => void publishBoard({ name: active.name, look: active.look, face: profileFaceCode(active), balance: state.balance, rating: state.rating, xp: state.xp, solved: solvedCount, branch: CITY_BY_ID[city].name, badges: badgeCount }),
+      () => void publishBoard({ name: active.name, look: active.look, face: profileFaceCode(active), week: state.week?.id, weekXp: state.week ? Math.max(0, state.xp - state.week.xp) : 0, prevWeek: state.week?.prev?.id, prevWeekXp: state.week?.prev?.xp ?? 0, balance: state.balance, rating: state.rating, xp: state.xp, solved: solvedCount, branch: CITY_BY_ID[city].name, badges: badgeCount }),
       2500,
     );
     return () => window.clearTimeout(t);
@@ -712,6 +717,7 @@ export default function Home() {
         <VerdictOverlay
           verdict={verdict}
           lossStreak={state.lossStreak}
+          share={{ seconds: solvedIn.current, detective: active.name, rank: rankFor(state.xp).name }}
           onContinue={() => {
             sfx.tap();
             if (verdict.kind === "correct") setOpenId(null);

@@ -133,6 +133,8 @@ export interface AdSettings {
   hunt?: number;
   /** How players reach the owner (shown on "Forgot password?"): an email or WhatsApp number. */
   support?: string;
+  /** The weekly tournament prize, shown on the leaderboard, e.g. "Top 3 win ₦2,000 airtime". */
+  prize?: string;
 }
 
 export const DEFAULT_SETTINGS: AdSettings = {

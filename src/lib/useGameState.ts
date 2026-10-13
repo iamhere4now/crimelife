@@ -2,6 +2,7 @@
 
 import { PRIZES, rollPrize } from "./spin";
 import { hasUnlock } from "./unlocks";
+import { weekId } from "./week";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CASE_BY_ID } from "./cases";
 import { readCloudSave, writeCloudSave } from "./cloudSave";
@@ -339,14 +340,22 @@ export function useGameState() {
     [commit, current],
   );
 
-  /** Opened the game today: keep (or restart) the daily streak. */
+  /** Opened the game today: keep (or restart) the daily streak, and start a new tournament week. */
   const checkIn = useCallback(() => {
     const s = current();
     const d = s.daily ?? initialState.daily;
     const t = today();
-    if (d.day === t) return;
+    const wk = weekId();
+    const newDay = d.day !== t;
+    const newWeek = s.week?.id !== wk;
+    if (!newDay && !newWeek) return;
     const streak = d.day === yesterday() ? d.streak + 1 : 1;
-    commit({ ...s, daily: { ...d, day: t, streak, best: Math.max(d.best, streak) } });
+    commit({
+      ...s,
+      daily: newDay ? { ...d, day: t, streak, best: Math.max(d.best, streak) } : d,
+      // last week's score is kept for the champions list
+      week: newWeek ? { id: wk, xp: s.xp, prev: s.week ? { id: s.week.id, xp: Math.max(0, s.xp - s.week.xp) } : undefined } : s.week,
+    });
   }, [commit, current]);
 
   /** Collect today's streak reward; returns what was paid (0 if already collected). */

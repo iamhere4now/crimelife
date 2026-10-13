@@ -1,7 +1,8 @@
 "use client";
 
-import { ShieldAlert, Star, Trophy, Unlock } from "lucide-react";
-import { useMemo } from "react";
+import { Share2, ShieldAlert, Star, Trophy, Unlock } from "lucide-react";
+import { useMemo, useState } from "react";
+import { shareResult, solveTime } from "@/lib/shareCard";
 import { CASE_BY_ID } from "@/lib/cases";
 import { moneyShort } from "@/lib/format";
 import { LOSS_LIMIT } from "@/lib/ranks";
@@ -13,9 +14,12 @@ interface Props {
   /** The detective's losing streak after this verdict, for the demotion warning. */
   lossStreak: number;
   onContinue: () => void;
+  /** For the share card: how long the case took and who solved it. */
+  share?: { seconds: number; detective: string; rank: string };
 }
 
-export function VerdictOverlay({ verdict, lossStreak, onContinue }: Props) {
+export function VerdictOverlay({ verdict, lossStreak, onContinue, share }: Props) {
+  const [sharing, setSharing] = useState<"" | "busy" | "saved" | "failed">("");
   const theCase = CASE_BY_ID[verdict.caseId];
   const suspect = theCase.suspects.find((s) => s.id === verdict.suspectId)!;
   const correct = verdict.kind === "correct";
@@ -92,6 +96,26 @@ export function VerdictOverlay({ verdict, lossStreak, onContinue }: Props) {
                 {lossesLeft === 1 ? "One more loss and dem go demote you!" : `${lossesLeft} more losses and dem go demote you.`}
               </p>
             )}
+          </>
+        )}
+
+        {correct && share && (
+          <>
+            <p className="mt-4 text-xs font-bold text-muted">Cracked in {solveTime(share.seconds)}</p>
+            <button
+              onClick={async () => {
+                setSharing("busy");
+                const r = await shareResult({ theCase, seconds: share.seconds, detective: share.detective, rank: share.rank, bounty: verdict.kind === "correct" ? verdict.bounty || theCase.bounty : theCase.bounty });
+                setSharing(r === "saved" ? "saved" : r === "failed" ? "failed" : "");
+              }}
+              disabled={sharing === "busy"}
+              className="mt-2 flex h-12 w-full items-center justify-center gap-2 rounded-full bg-[#25D366] font-extrabold text-white transition active:scale-95 disabled:opacity-60"
+            >
+              <Share2 className="size-5" />
+              {sharing === "busy" ? "Making your card…" : "Share your win"}
+            </button>
+            {sharing === "saved" && <p className="mt-1.5 text-[11px] text-muted">Picture saved. Post it on WhatsApp Status or Instagram with the message we opened.</p>}
+            {sharing === "failed" && <p className="mt-1.5 text-[11px] text-danger">Couldn&apos;t make the picture on this phone.</p>}
           </>
         )}
 

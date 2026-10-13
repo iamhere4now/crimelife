@@ -853,6 +853,15 @@ function Manager({ store, settings, onSettings }: { store: AdStore; settings: Ad
           />
         </label>
         <label className="mt-3 flex flex-col gap-1 text-[11px] font-semibold text-muted">
+          Weekly tournament prize (shown on the leaderboard; leave empty for none)
+          <input
+            value={draft.prize ?? ""}
+            onChange={(e) => setDraft({ ...draft, prize: e.target.value.slice(0, 120) })}
+            placeholder="e.g. Top 3 each win ₦2,000 airtime"
+            className="h-10 rounded-xl bg-raise px-3 text-sm text-fg focus:outline-none"
+          />
+        </label>
+        <label className="mt-3 flex flex-col gap-1 text-[11px] font-semibold text-muted">
           Support contact for players (shown on &ldquo;Forgot password?&rdquo;)
           <input
             value={draft.support ?? ""}

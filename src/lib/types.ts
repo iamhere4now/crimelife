@@ -280,6 +280,8 @@ export interface GameState {
   favorites: CaseId[];
   /** Sponsored hunts: tokens found per hunt id. */
   hunts: Record<string, string[]>;
+  /** The weekly tournament: merit at the start of this week, and last week's score. */
+  week?: { id: string; xp: number; prev?: { id: string; xp: number } };
 }
 
 export interface DailyState {

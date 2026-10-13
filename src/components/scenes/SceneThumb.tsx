@@ -17,7 +17,7 @@ import { hasWebGL } from "./Scene3D";
  */
 
 const cache = new Map<string, string>();
-type Job = { kit: KitScene; cast: boolean; done: ((url: string) => void)[]; urgent: boolean };
+type Job = { kit: KitScene; cast: boolean; done: ((url: string) => void)[]; urgent: boolean; force?: boolean };
 const waiting = new Map<string, Job>();
 const failures = new Map<string, number>();
 let renderer: THREE.WebGLRenderer | null = null;
@@ -42,14 +42,22 @@ function release() {
   renderer = null;
 }
 
-/** The next job: anything on screen first, then the rest in the background. */
+/** The next job: one asked for while a scene is open (a share card), then on-screen ones, then the rest. */
 function next(): [string, Job] | undefined {
+  if (liveScenes > 0) {
+    for (const entry of waiting) if (entry[1].force) return entry;
+    return undefined;
+  }
   for (const entry of waiting) if (entry[1].urgent) return entry;
   return waiting.entries().next().value;
 }
 
+const forced = () => [...waiting.values()].some((j) => j.force);
+
 function pump() {
-  if (busy || liveScenes > 0) return;
+  // while a live scene is open only a share card's picture may be drawn
+  if (busy) return;
+  if (liveScenes > 0 && !forced()) return release();
   if (waiting.size === 0) {
     // idle for a moment: free the graphics memory
     window.clearTimeout(releaseTimer);
@@ -57,15 +65,21 @@ function pump() {
     return;
   }
   window.clearTimeout(releaseTimer);
+  const first = next();
+  if (!first) {
+    // a share card's picture was drawn during a live scene: give the memory back now
+    if (liveScenes > 0) release();
+    return;
+  }
   busy = true;
-  const first = next()!;
   const idle = (window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => void }).requestIdleCallback;
   const run = () => {
-    if (liveScenes > 0) {
+    const pick = next();
+    if (!pick) {
       busy = false;
       return;
     }
-    const [key, job] = next() ?? first;
+    const [key, job] = pick;
     waiting.delete(key);
     let url = "";
     try {
@@ -103,15 +117,36 @@ function pump() {
   else setTimeout(run, first[1].urgent ? 30 : 200);
 }
 
-function request(key: string, kit: KitScene, cast: boolean, urgent: boolean, done: (url: string) => void) {
+function request(key: string, kit: KitScene, cast: boolean, urgent: boolean, done: (url: string) => void, force = false) {
   const hit = cache.get(key);
   if (hit) return done(hit);
   const job = waiting.get(key);
   if (job) {
     job.done.push(done);
     job.urgent ||= urgent;
-  } else waiting.set(key, { kit, cast, done: [done], urgent });
+    job.force ||= force;
+  } else waiting.set(key, { kit, cast, done: [done], urgent, force });
   pump();
+}
+
+/** A case's scene as a still picture (a JPEG data URL), for share cards. Empty when there's no 3D. */
+export function thumbnailOf(theCase: CrimeCase, cast = true): Promise<string> {
+  const key = `${theCase.kit ? theCase.id : `scene:${sceneOf(theCase)}`}|${cast}`;
+  if (!hasWebGL()) return Promise.resolve("");
+  return new Promise((resolve) => {
+    const t = window.setTimeout(() => resolve(""), 8000);
+    request(
+      key,
+      kitOf(theCase),
+      cast,
+      true,
+      (url) => {
+        window.clearTimeout(t);
+        resolve(url);
+      },
+      true,
+    );
+  });
 }
 
 /** A case's scene as a still 3D picture, with the drawn scene until it's ready. */

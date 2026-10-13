@@ -65,6 +65,12 @@ export interface BoardRow {
   solved: number;
   branch: string;
   badges: number;
+  /** Weekly tournament: the week this row's weekly score belongs to, and the score (merit gained that week). */
+  week?: string;
+  weekXp?: number;
+  /** Last week's final score, for the champions list. */
+  prevWeek?: string;
+  prevWeekXp?: number;
   updatedAt: number;
   me: boolean;
 }
@@ -86,6 +92,10 @@ export async function publishBoard(row: BoardEntry) {
       solved: Math.round(num(row.solved, 0, 999)),
       branch: str(row.branch, 20),
       badges: Math.round(num(row.badges, 0, 99)),
+      week: typeof row.week === "string" ? row.week.slice(0, 8) : null,
+      weekXp: Math.round(num(row.weekXp, 0, 50_000)),
+      prevWeek: typeof row.prevWeek === "string" ? row.prevWeek.slice(0, 8) : null,
+      prevWeekXp: Math.round(num(row.prevWeekXp, 0, 50_000)),
       updatedAt: Date.now(),
     });
   } catch {
@@ -120,6 +130,10 @@ export function watchBoard(cb: (rows: BoardRow[] | null) => void): Unsub {
                 solved: num(v.solved, 0, 999),
                 branch: str(v.branch, 20),
                 badges: num(v.badges, 0, 99),
+                week: typeof v.week === "string" ? v.week.slice(0, 8) : undefined,
+                weekXp: num(v.weekXp, 0, 50_000),
+                prevWeek: typeof v.prevWeek === "string" ? v.prevWeek.slice(0, 8) : undefined,
+                prevWeekXp: num(v.prevWeekXp, 0, 50_000),
                 updatedAt: num(v.updatedAt, 0),
                 me: d.id === s.id,
               } as BoardRow;

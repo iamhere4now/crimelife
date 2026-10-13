@@ -221,6 +221,8 @@ function tidy(seg: string[], data: Record<string, unknown>, owner: boolean) {
     xp: clampNum(data.xp, 0, 50_000),
     solved: clampNum(data.solved, 0, 500),
     badges: clampNum(data.badges, 0, 100),
+    weekXp: clampNum(data.weekXp, 0, 50_000),
+    prevWeekXp: clampNum(data.prevWeekXp, 0, 50_000),
   };
 }
 
