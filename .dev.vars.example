@@ -1,3 +1,4 @@
 # Local test values for `wrangler dev` only (copy to .dev.vars). Real ones: `npx wrangler secret put ADMIN_KEY`
 ADMIN_KEY=local-test-owner
 # ANTHROPIC_API_KEY=
+# PAYSTACK_SECRET_KEY=sk_test_...   # optional: Paystack test key, for trying online poster payments

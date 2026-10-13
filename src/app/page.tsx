@@ -14,6 +14,7 @@ import { HelpSheet } from "@/components/HelpSheet";
 import { Header } from "@/components/Header";
 import { LeaderboardView } from "@/components/LeaderboardView";
 import { InstallBanner } from "@/components/AppSettings";
+import { returningFromPaystack, verifyPayment } from "@/lib/pay";
 import { ModesRow } from "@/components/ModesRow";
 import { NaijaFilesCard } from "@/components/NaijaFilesCard";
 import { ProfileView } from "@/components/ProfileView";
@@ -78,7 +79,7 @@ export default function Home() {
   const [spinOpen, setSpinOpen] = useState(false);
   // the owner's private console: only at <game address>#owner, and only with the owner password
   const [ownerOpen, setOwnerOpen] = useState(false);
-  const [adsTab, setAdsTab] = useState<"new" | "manage">("new");
+  const [adsTab, setAdsTab] = useState<"new" | "mine" | "manage">("new");
   useEffect(() => {
     const check = () => setOwnerOpen(window.location.hash === "#owner");
     check();
@@ -160,6 +161,21 @@ export default function Home() {
 
   const notify = useCallback((text: string, tone: ToastMessage["tone"] = "info") => setToast({ id: Date.now(), text, tone }), []);
   const clearToast = useCallback(() => setToast(null), []);
+
+  // back from Paystack's checkout: check the payment, then show their posters
+  useEffect(() => {
+    const back = returningFromPaystack();
+    if (!back.ref && !back.cancelled) return;
+    setAdsTab("mine");
+    setAdsOpen(true);
+    if (back.cancelled || !back.ref) return notify("Payment cancelled. You can pay any time from My posters.");
+    void verifyPayment(back.ref).then((r) =>
+      notify(
+        r === "paid" ? "Payment received ✓ Your poster goes live once it's checked." : r === "failed" ? "The payment didn't go through. You can try again from My posters." : "Payment is still processing. Check My posters in a minute.",
+        r === "paid" ? "good" : "info",
+      ),
+    );
+  }, [notify]);
 
   // Featured case: the first unsolved case in any open mode, else a replay of the first case.
   // The next case to play: first unsolved open case in this city, else anywhere.

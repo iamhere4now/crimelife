@@ -135,6 +135,8 @@ export interface AdSettings {
   support?: string;
   /** The weekly tournament prize, shown on the leaderboard, e.g. "Top 3 win ₦2,000 airtime". */
   prize?: string;
+  /** Posters paid online with Paystack go live straight away, without the owner's review. */
+  autoPublish?: boolean;
 }
 
 export const DEFAULT_SETTINGS: AdSettings = {
@@ -300,7 +302,8 @@ export interface AdStore {
   isOwner: boolean;
   settings(): Promise<AdSettings>;
   saveSettings(s: AdSettings): Promise<void>;
-  submit(sub: Omit<AdSubmission, "id" | "by" | "status" | "createdAt">): Promise<void>;
+  /** Resolves the new submission's id. */
+  submit(sub: Omit<AdSubmission, "id" | "by" | "status" | "createdAt">): Promise<string>;
   mine(): Promise<AdSubmission[]>;
   /** Owner: every submission. */
   all(): Promise<AdSubmission[]>;
@@ -463,6 +466,7 @@ function sharedStore(db: Db, myId: string, isOwner: boolean): AdStore {
       const id = `p${Date.now().toString(36)}`;
       await db.doc(`adsubmit/${myId}`).set({ updatedAt: Date.now() });
       await mineCol().doc(id).set(plain({ ...sub, status: "pending", createdAt: Date.now() }));
+      return id;
     },
     async mine() {
       const r = await mineCol().get();
@@ -531,8 +535,10 @@ function localStore(): AdStore {
     saveSettings: async (s) => write({ ...read(), settings: s }),
     async submit(sub) {
       const v = read();
-      v.subs.unshift({ ...sub, id: `p${Date.now().toString(36)}`, by: "local", status: "pending", createdAt: Date.now() });
+      const id = `p${Date.now().toString(36)}`;
+      v.subs.unshift({ ...sub, id, by: "local", status: "pending", createdAt: Date.now() });
       write(v);
+      return id;
     },
     mine: async () => read().subs,
     all: async () => read().subs,

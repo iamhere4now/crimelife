@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Eye, ImagePlus, Megaphone, MousePointerClick, RefreshCw, ShieldCheck, Trash2, X } from "lucide-react";
+import { Check, CreditCard, Eye, ImagePlus, Megaphone, MousePointerClick, RefreshCw, ShieldCheck, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AD_RULES,
@@ -34,6 +34,8 @@ import { sfx } from "@/lib/SoundEffects";
 import { readAdStats, type AdCount } from "@/lib/board";
 import { checkOwner, isCloudflareRuntime, setAdminKey } from "@/lib/cfRuntime";
 import { listSignups, signupsCsv, type Signup } from "@/lib/signups";
+import { huntCaseFor } from "@/lib/huntCase";
+import { myPayments, ownerPayments, PAY_MESSAGES, payEnabled, startPayment, type OwnerPayment } from "@/lib/pay";
 
 type Tab = "new" | "mine" | "manage";
 
@@ -162,9 +164,10 @@ function NewPoster({ store, settings, from, onDone }: { store: AdStore; settings
   const [agree, setAgree] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [sent, setSent] = useState<{ ref: string; price: number } | null>(null);
+  const [sent, setSent] = useState<{ id: string; ref: string; price: number; city: AdCity; hunt: boolean } | null>(null);
   const ref = useMemo(() => makeRef(), []);
   const input = useRef<HTMLInputElement>(null);
+  const online = usePayEnabled();
   const huntCost = hunt ? HUNT_PRICE(settings) * weeks : 0;
   const price = priceOf(settings, placement, city, weeks, count) + huntCost;
   const fullPrice = priceOf(settings, placement, city, weeks, 1) * count + huntCost;
@@ -188,7 +191,7 @@ function NewPoster({ store, settings, from, onDone }: { store: AdStore; settings
     setError("");
     try {
       const image = renderPoster(img, placement, framing);
-      await store.submit({
+      const id = await store.submit({
         business: business.trim(),
         phone: phone.trim(),
         placement,
@@ -204,7 +207,7 @@ function NewPoster({ store, settings, from, onDone }: { store: AdStore; settings
         hunt: hunt ? { offer: offer.trim(), code: code.trim().toUpperCase(), tokens } : undefined,
       });
       sfx.success();
-      setSent({ ref, price });
+      setSent({ id, ref, price, city, hunt });
     } catch (e) {
       const code = (e as { code?: string })?.code;
       setError(
@@ -228,8 +231,9 @@ function NewPoster({ store, settings, from, onDone }: { store: AdStore; settings
           <Check className="size-6" strokeWidth={3} />
         </div>
         <h3 className="mt-3 text-lg font-bold">Poster sent for review</h3>
-        <p className="mt-1 text-sm text-neutral-600">
-          Pay <b>{money(sent.price)}</b> and use the reference <b className="font-mono">{sent.ref}</b>. Your poster goes live as soon as the payment is confirmed.
+        <PayButton subId={sent.id} city={sent.city} hunt={sent.hunt} price={sent.price} big />
+        <p className="mt-3 text-sm text-neutral-600">
+          {online ? "Or pay" : "Pay"} <b>{money(sent.price)}</b> and use the reference <b className="font-mono">{sent.ref}</b>. Your poster goes live as soon as the payment is confirmed.
         </p>
         <PaymentNote text={settings.payment} />
         <button onClick={onDone} className="mt-4 h-11 w-full rounded-2xl bg-kick text-sm font-bold text-white active:scale-[0.98]">
@@ -463,6 +467,51 @@ function PaymentNote({ text }: { text: string }) {
   );
 }
 
+function usePayEnabled() {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    void payEnabled().then(setOn);
+  }, []);
+  return on;
+}
+
+/** "Pay with Paystack": card, bank transfer or USSD on Paystack's page, then back to the game. */
+function PayButton({ subId, city, hunt, price, big }: { subId: string; city: AdCity; hunt: boolean; price: number; big?: boolean }) {
+  const online = usePayEnabled();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  if (!online) return null;
+  const go = async (email?: string): Promise<void> => {
+    setBusy(true);
+    setError("");
+    const r = await startPayment(subId, hunt ? huntCaseFor(city, subId) : undefined, email);
+    if ("url" in r) {
+      window.location.href = r.url;
+      return;
+    }
+    if (r.error === "need_email" && !email) {
+      const typed = window.prompt("Your email, for the Paystack receipt:")?.trim();
+      if (typed) return go(typed);
+    }
+    setError(PAY_MESSAGES[r.error]);
+    setBusy(false);
+  };
+  return (
+    <div className={big ? "mt-4" : "mt-2"}>
+      <button
+        onClick={() => void go()}
+        disabled={busy}
+        className={`flex w-full items-center justify-center gap-2 rounded-2xl bg-[#0ba4db] font-bold text-white transition active:scale-[0.98] disabled:opacity-60 ${big ? "h-12 text-sm" : "h-9 text-xs"}`}
+      >
+        <CreditCard className={big ? "size-5" : "size-4"} />
+        {busy ? "Opening Paystack…" : `Pay ${money(price)} now`}
+      </button>
+      <p className="mt-1 text-center text-[10px] text-muted">Card, bank transfer or USSD, on Paystack&apos;s secure page.</p>
+      {error && <p className="mt-1 text-center text-[11px] font-semibold text-danger">{error}</p>}
+    </div>
+  );
+}
+
 const SWATCHES = ["#ffffff", "#14161b", "#f5c518", "#c0182b", "#1d6a3a", "#1d4a8a"];
 
 /**
@@ -612,9 +661,11 @@ const DAY = 24 * 3600 * 1000;
 
 function MyPosters({ store, onRenew }: { store: AdStore; onRenew: (s: AdSubmission) => void }) {
   const [list, setList] = useState<AdSubmission[] | null>(null);
+  const [paid, setPaid] = useState<Record<string, number>>({});
   const stats = useAdStats();
   useEffect(() => {
     store.mine().then(setList, () => setList([]));
+    void myPayments().then(setPaid);
   }, [store]);
   if (!list) return <p className="py-10 text-center text-sm text-muted">Loading…</p>;
   if (!list.length) return <p className="py-10 text-center text-sm text-neutral-600">No posters yet. Send one from the New poster tab.</p>;
@@ -637,7 +688,8 @@ function MyPosters({ store, onRenew }: { store: AdStore; onRenew: (s: AdSubmissi
         const ended = s.status === "expired" || (left !== null && left <= 0);
         const soon = left !== null && left > 0 && left <= 3;
         return (
-          <PosterRow key={s.id} s={s} stats={stats[s.id]} huntStats={stats["h" + s.id]}>
+          <PosterRow key={s.id} s={s} stats={stats[s.id]} huntStats={stats["h" + s.id]} paid={paid[s.id] !== undefined}>
+            {s.status === "pending" && paid[s.id] === undefined && <PayButton subId={s.id} city={s.city} hunt={!!s.hunt} price={s.price} />}
             {(ended || soon) && (
               <div className="mt-1.5 flex items-center gap-2">
                 <span className={`text-[11px] font-semibold ${ended ? "text-muted" : "text-[#c26a00]"}`}>
@@ -656,8 +708,8 @@ function MyPosters({ store, onRenew }: { store: AdStore; onRenew: (s: AdSubmissi
   );
 }
 
-function PosterRow({ s, stats, huntStats, children }: { s: AdSubmission; stats?: AdCount; huntStats?: AdCount; children?: React.ReactNode }) {
-  const st = STATUS[s.status];
+function PosterRow({ s, stats, huntStats, paid, children }: { s: AdSubmission; stats?: AdCount; huntStats?: AdCount; paid?: boolean; children?: React.ReactNode }) {
+  const st = s.status === "pending" && paid ? { label: "Paid ✓ · being checked", cls: "bg-go/15 text-go" } : STATUS[s.status];
   return (
     <div className="soft flex gap-3 rounded-2xl bg-card p-3">
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -709,7 +761,11 @@ function Manager({ store, settings, onSettings }: { store: AdStore; settings: Ad
   const [confirmDown, setConfirmDown] = useState<string | null>(null);
   const [error, setError] = useState("");
 
-  const load = () => store.all().then(setList, () => setList([]));
+  const [payments, setPayments] = useState<{ enabled: boolean; bySub: Record<string, OwnerPayment> }>({ enabled: false, bySub: {} });
+  const load = () => {
+    void ownerPayments().then(setPayments);
+    return store.all().then(setList, () => setList([]));
+  };
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -759,7 +815,8 @@ function Manager({ store, settings, onSettings }: { store: AdStore; settings: Ad
         ) : (
           <div className="space-y-2">
             {pending.map((s) => (
-              <PosterRow key={s.id} s={s} stats={stats[s.id]} huntStats={stats["h" + s.id]}>
+              <PosterRow key={s.id} s={s} stats={stats[s.id]} huntStats={stats["h" + s.id]} paid={payments.bySub[`${s.by}/${s.id}`]?.status === "paid"}>
+                <PaidLine p={payments.bySub[`${s.by}/${s.id}`]} expected={priceOf(settings, s.placement, s.city, s.weeks, s.count) + (s.hunt ? HUNT_PRICE(settings) * s.weeks : 0)} online={payments.enabled} />
                 <div className="mt-1 text-[11px] text-neutral-700">
                   WhatsApp: <span className="font-semibold">{s.phone}</span>
                   {s.whatsapp ? " (shown on poster)" : " (private)"} · sent {dateOf(s.createdAt)}
@@ -870,6 +927,17 @@ function Manager({ store, settings, onSettings }: { store: AdStore; settings: Ad
             className="h-10 rounded-xl bg-raise px-3 text-sm text-fg focus:outline-none"
           />
         </label>
+        {isCloudflareRuntime() && (
+          <div className="mt-3 rounded-xl bg-raise px-3 py-2 text-[12px] text-neutral-700">
+            <b>Paystack:</b> {payments.enabled ? "connected ✓ Advertisers can pay online." : "not set up. Advertisers pay you directly (instructions above)."}
+            {payments.enabled && (
+              <label className="mt-2 flex items-start gap-2">
+                <input type="checkbox" checked={!!draft.autoPublish} onChange={(e) => setDraft({ ...draft, autoPublish: e.target.checked })} className="mt-0.5 size-4 accent-[#14161b]" />
+                <span>Put posters paid online live straight away, without my review. Off: they wait in &ldquo;Waiting for review&rdquo; marked Paid.</span>
+              </label>
+            )}
+          </div>
+        )}
         <label className="mt-3 flex items-center gap-2 text-sm">
           <input type="checkbox" checked={draft.open} onChange={(e) => setDraft({ ...draft, open: e.target.checked })} className="size-4 accent-[#14161b]" />
           Accept new posters
@@ -1001,5 +1069,18 @@ export function Signups() {
       )}
       <p className="mt-2 text-[10px] text-muted">Private: only you (signed in as owner) can see this list.</p>
     </section>
+  );
+}
+
+/** In the Ad manager: did this poster's payment come in through Paystack? */
+function PaidLine({ p, expected, online }: { p?: OwnerPayment; expected: number; online: boolean }) {
+  if (!p) return online ? <div className="mt-1 text-[11px] font-semibold text-muted">Not paid online. Check your bank for a transfer with the reference.</div> : null;
+  if (p.status === "mismatch") return <div className="mt-1 text-[11px] font-semibold text-danger">⚠ Paystack payment with the wrong amount ({p.ref}). Check it in your Paystack dashboard.</div>;
+  return (
+    <div className="mt-1 text-[11px] font-semibold text-go">
+      ✓ Paid {money(p.amount)} on Paystack{p.channel ? ` (${p.channel.replace(/_/g, " ")})` : ""}
+      {p.paid_at ? ` · ${dateOf(p.paid_at)}` : ""} · <span className="font-mono">{p.ref}</span>
+      {expected > p.amount && <span className="block text-danger">⚠ They changed the poster after paying: it now costs {money(expected)}.</span>}
+    </div>
   );
 }

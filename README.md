@@ -31,6 +31,7 @@ On Cloudflare the game runs on your own account, not on claude.ai.
 | Senior Inspector questions | Claude API, if you set `ANTHROPIC_API_KEY`; otherwise scripted tips |
 | Install on the home screen, offline start | `cloudflare/manifest.webmanifest`, `cloudflare/icons/`, `cloudflare/sw.js` (from `artifact/sw.js`) |
 | Reminders | Web Push, sent by the Worker's **cron trigger** (every minute) |
+| Poster payments | **Paystack**, if you set `PAYSTACK_SECRET_KEY`; otherwise advertisers pay you directly |
 
 `src/lib/cfRuntime.ts` gives the game the same small `window.claude` interface it uses on claude.ai, backed by the Worker. That means the rest of the game is unchanged.
 
@@ -57,6 +58,12 @@ The Ad manager opens only from the Owner console. Players never see an owner sig
 - **Lite mode** (`src/lib/lite.ts`): Profile › App & data. It shows drawn scenes instead of 3D and turns off the street recording. It switches on by itself when the phone's Data Saver is on, unless the player has chosen.
 - Icons: edit `artifact/icon.svg`, then run `node artifact/make-icons.mjs`.
 
+**Paystack payments for posters** (`src/lib/pay.ts`, `worker/index.ts` › Paystack):
+- **Turn it on:** `npx wrangler secret put PAYSTACK_SECRET_KEY` (use `sk_test_...` to try it, `sk_live_...` for real money). In the Paystack dashboard › Settings › API Keys & Webhooks, set the **Webhook URL** to `https://<your game>/api/pay/webhook`.
+- **The advertiser's side:** after sending a poster they get **Pay ₦… now** (card, bank transfer or USSD on Paystack's page). It's also under My posters for any poster not yet paid. Afterwards Paystack sends them back to the game, which checks the payment and shows "Paid ✓ · being checked".
+- **Your side:** the Ad manager marks each waiting poster "✓ Paid ₦… on Paystack" or "Not paid online". Approve as usual. Optional setting: **put posters paid online live straight away, without my review**. The bank-transfer instructions still show as another way to pay.
+- **Safety:** the price is worked out by the Worker from your settings, never taken from the page. A payment counts only when Paystack confirms it, either by the verify call or by the webhook (checked with the HMAC-SHA512 signature), and only for exactly the right amount in naira. Paid status lives in the `payments` table, which players can't write to. If a poster is changed after paying so that it costs more, it isn't put up automatically and the Ad manager warns you. Refunds for rejected posters are done in your Paystack dashboard.
+
 **Security:**
 - Owner password: 10 wrong tries an hour from one address locks that address out.
 - Player tokens: sent only in headers. Live rooms use one-minute, one-use tickets.
@@ -75,6 +82,7 @@ npx wrangler secret put ADMIN_KEY         # your owner password
 #   npx wrangler r2 bucket create crimelife-media
 # and put back the "r2_buckets" line in wrangler.jsonc
 npx wrangler secret put ANTHROPIC_API_KEY # optional
+npx wrangler secret put PAYSTACK_SECRET_KEY # optional: online poster payments
 npm run build:cloudflare && npx wrangler deploy
 ```
 

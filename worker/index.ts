@@ -9,6 +9,7 @@
  *   /api/room/<name>      live room over a WebSocket: presence     (Durable Object)
  *   /api/ask              the Senior Inspector's answers           (Claude API, optional)
  *   /api/push/...         home-screen reminders (Web Push), sent by the cron trigger
+ *   /api/pay/...          advertisers pay for posters with Paystack (optional)
  *   /media/<key>          poster images                            (R2, optional)
  * Everything else is the game itself (static assets in ./cloudflare).
  *
@@ -43,6 +44,8 @@ interface Env {
   ASK_MODEL?: string;
   /** Most Senior Inspector questions the whole game may ask Claude per day (default 300). */
   ASK_DAILY_LIMIT?: string;
+  /** Optional: Paystack secret key (sk_live_... or sk_test_...) so advertisers can pay online. */
+  PAYSTACK_SECRET_KEY?: string;
 }
 
 const json = (body: unknown, status = 200) =>
@@ -69,6 +72,11 @@ function schema(env: Env) {
     env.DB.prepare(
       "CREATE TABLE IF NOT EXISTS push_jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, created INTEGER NOT NULL, started INTEGER, finished INTEGER, cursor TEXT NOT NULL DEFAULT '', sent INTEGER NOT NULL DEFAULT 0, gone INTEGER NOT NULL DEFAULT 0)",
     ).bind(),
+    // Paystack payments: only the Worker writes here, so a player can't mark their own poster paid
+    env.DB.prepare(
+      "CREATE TABLE IF NOT EXISTS payments (ref TEXT PRIMARY KEY, uid TEXT NOT NULL, sub_id TEXT NOT NULL, amount INTEGER NOT NULL, email TEXT NOT NULL, hunt_case TEXT, status TEXT NOT NULL, created INTEGER NOT NULL, paid_at INTEGER, channel TEXT)",
+    ).bind(),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS payments_uid ON payments(uid)").bind(),
   ]).catch((e) => {
     ready = null;
     throw e;
@@ -249,7 +257,10 @@ async function api(req: Request, env: Env, ctx: { waitUntil(p: Promise<unknown>)
   const url = new URL(req.url);
   const route = url.pathname.replace(/^\/api\//, "");
 
-  if (route === "health") return json({ ok: true, media: !!env.MEDIA, ask: !!env.ANTHROPIC_API_KEY });
+  if (route === "health") return json({ ok: true, media: !!env.MEDIA, ask: !!env.ANTHROPIC_API_KEY, pay: !!env.PAYSTACK_SECRET_KEY });
+
+  // Paystack tells us about payments here; the signature proves it's them
+  if (route === "pay/webhook" && req.method === "POST") return payWebhook(req, env, ctx);
 
   if (route === "auth" && req.method === "POST") {
     if (!(await allow(env, `auth:${ipOf(req)}`, 30, 3_600_000))) return fail("rate_limited", 429);
@@ -334,6 +345,10 @@ async function api(req: Request, env: Env, ctx: { waitUntil(p: Promise<unknown>)
       await env.DB.prepare("INSERT INTO push_jobs (kind, title, body, created) VALUES ('owner', ?, ?, ?)").bind(title, text, Date.now()).run();
       return json({ ok: true });
     }
+    if (route === "admin/payments") {
+      const rows = await env.DB.prepare("SELECT ref, uid, sub_id, amount, status, paid_at, channel FROM payments WHERE status IN ('paid', 'mismatch') ORDER BY created DESC LIMIT 500").bind().all();
+      return json({ payments: rows.results, enabled: !!env.PAYSTACK_SECRET_KEY });
+    }
     if (route === "admin/push-auto" && req.method === "POST") {
       const body = (await req.json().catch(() => ({}))) as { on?: unknown };
       await env.DB.prepare("INSERT INTO kv (key, value) VALUES ('push:auto', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(body.on === false ? "off" : "on").run();
@@ -391,6 +406,9 @@ async function api(req: Request, env: Env, ctx: { waitUntil(p: Promise<unknown>)
     const acc = await env.DB.prepare("SELECT email FROM accounts WHERE uid = ?").bind(who.uid).first<{ email: string }>();
     return json({ uid: who.uid, owner: who.owner, ownerSet: !!env.ADMIN_KEY, email: acc?.email ?? null });
   }
+
+  /* ---- paying for a poster */
+  if (route.startsWith("pay/")) return pay(route, req, env, ctx, who.uid, url.origin);
 
   /* ---- reminders on this device */
   if (route === "push/subscribe" && req.method === "POST") {
@@ -540,6 +558,200 @@ async function ask(req: Request, env: Env, uid: string, ip: string) {
   if (!r.ok) return fail("upstream_error", 502);
   const out = (await r.json()) as { content?: { type: string; text?: string }[] };
   return json({ text: (out.content ?? []).filter((c) => c.type === "text").map((c) => c.text).join("") });
+}
+
+/* ---------------------------------------------------------------- Paystack (posters paid online) */
+
+/*
+ * The advertiser sends a poster (adsubmit/<me>/posters/<id>, status "pending"),
+ * then taps Pay: the Worker works out the price itself from the owner's
+ * settings (never the price the page sent), starts a Paystack checkout and
+ * sends them there. A payment counts once Paystack confirms it, either when
+ * the advertiser comes back (/api/pay/verify asks Paystack) or by Paystack's
+ * signed webhook, and only if the amount is exactly right. Paid posters wait
+ * for the owner's review, unless the owner chose "publish straight away".
+ */
+
+const PAYSTACK = "https://api.paystack.co";
+const AD_DEFAULTS: Record<string, number> = { billboard: 15_000, signboard: 8_000, banner: 6_000, poster: 5_000, nationwide: 3, hunt: 20_000 };
+const PLACEMENT_SET = new Set(["billboard", "signboard", "banner", "poster"]);
+const WEEK_MS = 7 * 86_400_000;
+
+async function readDoc(env: Env, path: string): Promise<Record<string, any> | null> {
+  const row = await env.DB.prepare("SELECT data FROM docs WHERE path = ?").bind(path).first<{ data: string }>();
+  return row ? JSON.parse(row.data) : null;
+}
+
+async function writeDoc(env: Env, ctx: { waitUntil(p: Promise<unknown>): void }, path: string, data: Record<string, unknown>) {
+  const seg = path.split("/");
+  const parent = seg.slice(0, -1).join("/");
+  await env.DB.prepare("INSERT INTO docs (path, parent, id, data, updated) VALUES (?, ?, ?, ?, ?) ON CONFLICT(path) DO UPDATE SET data = excluded.data, updated = excluded.updated")
+    .bind(path, parent, seg[seg.length - 1], JSON.stringify(data), Date.now())
+    .run();
+  notify(env, ctx, parent);
+}
+
+/** The same sum as priceOf() + the hunt add-on in src/lib/ads.ts, from the owner's settings. */
+function adPrice(settings: Record<string, any>, sub: Record<string, any>) {
+  const n = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : d);
+  const placement = String(sub.placement);
+  if (!PLACEMENT_SET.has(placement)) return 0;
+  const weeks = Math.max(1, Math.min(52, Math.round(n(sub.weeks, 1))));
+  const count = Math.max(1, Math.min(20, Math.round(n(sub.count, 1))));
+  const discount = count >= 10 ? 0.2 : count >= 5 ? 0.1 : 0;
+  const base = n(settings[placement], AD_DEFAULTS[placement]);
+  const nationwide = sub.city === "all" ? Math.max(1, n(settings.nationwide, AD_DEFAULTS.nationwide)) : 1;
+  const hunt = sub.hunt && typeof sub.hunt === "object" ? n(settings.hunt, AD_DEFAULTS.hunt) * weeks : 0;
+  return Math.round(base * weeks * count * (1 - discount) * nationwide) + Math.round(hunt);
+}
+
+const paystack = (env: Env, path: string, init: RequestInit = {}) =>
+  fetch(`${PAYSTACK}${path}`, { ...init, headers: { authorization: `Bearer ${env.PAYSTACK_SECRET_KEY}`, "content-type": "application/json", ...(init.headers ?? {}) } });
+
+async function pay(route: string, req: Request, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }, uid: string, origin: string): Promise<Response> {
+  if (route === "pay/mine") {
+    const rows = await env.DB.prepare("SELECT sub_id, amount, paid_at FROM payments WHERE uid = ? AND status = 'paid'").bind(uid).all();
+    return json({ paid: rows.results });
+  }
+  if (!env.PAYSTACK_SECRET_KEY) return fail("not_granted", 501);
+  if (req.method !== "POST") return fail("not_found", 404);
+  const body = (await req.json().catch(() => ({}))) as { subId?: unknown; huntCase?: unknown; email?: unknown; ref?: unknown };
+
+  if (route === "pay/start") {
+    if (!(await allow(env, `pay:${uid}`, 20, 3_600_000))) return fail("rate_limited", 429);
+    const subId = typeof body.subId === "string" && /^p[a-z0-9]{1,20}$/.test(body.subId) ? body.subId : "";
+    if (!subId) return fail("invalid_argument", 400);
+    const sub = await readDoc(env, `adsubmit/${uid}/posters/${subId}`);
+    if (!sub) return fail("not_found", 404);
+    if (sub.status !== "pending") return fail("not_pending", 409);
+    if (await env.DB.prepare("SELECT 1 AS x FROM payments WHERE uid = ? AND sub_id = ? AND status = 'paid'").bind(uid, subId).first()) return fail("already_paid", 409);
+    const settings = (await readDoc(env, "adsettings/main")) ?? {};
+    if (settings.open === false) return fail("closed", 409);
+    const amount = adPrice(settings, sub);
+    if (amount < 100) return fail("invalid_argument", 400);
+    // the email Paystack sends the receipt to: their account, their sign-up, or one they type
+    const acc = await env.DB.prepare("SELECT email FROM accounts WHERE uid = ?").bind(uid).first<{ email: string }>();
+    const signup = acc ? null : await readDoc(env, `signups/${uid}`);
+    const typed = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+    const email = [acc?.email, typeof signup?.email === "string" ? signup.email.trim().toLowerCase() : "", typed].find((e) => e && EMAIL.test(e));
+    if (!email) return fail("need_email", 400);
+    const huntCase = typeof body.huntCase === "string" && /^[a-z0-9-]{1,40}$/.test(body.huntCase) ? body.huntCase : null;
+    const ref = `ND-${subId}-${randomId(4)}`;
+    const r = await paystack(env, "/transaction/initialize", {
+      method: "POST",
+      body: JSON.stringify({
+        email,
+        amount: amount * 100, // kobo
+        currency: "NGN",
+        reference: ref,
+        callback_url: `${origin}/?paid=1`,
+        metadata: { uid, sub_id: subId, business: String(sub.business ?? "").slice(0, 60), cancel_action: `${origin}/?paid=0` },
+      }),
+    });
+    const out = (await r.json().catch(() => ({}))) as { status?: boolean; data?: { authorization_url?: string } };
+    if (!r.ok || !out.status || !out.data?.authorization_url?.startsWith("https://")) {
+      console.warn("[pay] initialize", r.status, JSON.stringify(out).slice(0, 300));
+      return fail("upstream_error", 502);
+    }
+    await env.DB.prepare("INSERT INTO payments (ref, uid, sub_id, amount, email, hunt_case, status, created) VALUES (?, ?, ?, ?, ?, ?, 'started', ?)")
+      .bind(ref, uid, subId, amount, email, huntCase, Date.now())
+      .run();
+    return json({ url: out.data.authorization_url, ref, amount });
+  }
+
+  if (route === "pay/verify") {
+    if (!(await allow(env, `payv:${uid}`, 60, 3_600_000))) return fail("rate_limited", 429);
+    const ref = typeof body.ref === "string" && /^ND-[A-Za-z0-9-]{1,40}$/.test(body.ref) ? body.ref : "";
+    const row = ref ? await env.DB.prepare("SELECT status FROM payments WHERE ref = ? AND uid = ?").bind(ref, uid).first<{ status: string }>() : null;
+    if (!row) return fail("not_found", 404);
+    if (row.status === "paid") return json({ status: "paid" });
+    const r = await paystack(env, `/transaction/verify/${encodeURIComponent(ref)}`);
+    const out = (await r.json().catch(() => ({}))) as { data?: { status?: string; amount?: number; currency?: string; channel?: string } };
+    if (!r.ok || !out.data) return fail("upstream_error", 502);
+    if (out.data.status !== "success") return json({ status: out.data.status ?? "pending" });
+    return json({ status: await settlePayment(env, ctx, ref, out.data.amount, out.data.currency, out.data.channel) });
+  }
+  return fail("not_found", 404);
+}
+
+async function payWebhook(req: Request, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) {
+  if (!env.PAYSTACK_SECRET_KEY) return fail("not_granted", 501);
+  const raw = await req.text();
+  if (raw.length > 200_000) return fail("too_large", 413);
+  // x-paystack-signature: HMAC-SHA512 of the body with the secret key
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(env.PAYSTACK_SECRET_KEY), { name: "HMAC", hash: "SHA-512" }, false, ["sign"]);
+  const mac = [...new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(raw)))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  if (!sameText(mac, (req.headers.get("x-paystack-signature") ?? "").toLowerCase())) return fail("not_permitted", 401);
+  let event: { event?: string; data?: { reference?: string; amount?: number; currency?: string; channel?: string; status?: string } };
+  try {
+    event = JSON.parse(raw);
+  } catch {
+    return fail("invalid_argument", 400);
+  }
+  if (event.event === "charge.success" && event.data?.status === "success" && typeof event.data.reference === "string") {
+    await settlePayment(env, ctx, event.data.reference, event.data.amount, event.data.currency, event.data.channel);
+  }
+  return json({ ok: true });
+}
+
+/** Paystack says this reference was paid: record it once, if the amount is exactly what we asked. */
+async function settlePayment(env: Env, ctx: { waitUntil(p: Promise<unknown>): void }, ref: string, kobo: unknown, currency: unknown, channel: unknown): Promise<string> {
+  const row = await env.DB.prepare("SELECT ref, uid, sub_id, amount, hunt_case, status FROM payments WHERE ref = ?")
+    .bind(ref)
+    .first<{ ref: string; uid: string; sub_id: string; amount: number; hunt_case: string | null; status: string }>();
+  if (!row) return "unknown";
+  if (row.status === "paid") return "paid";
+  if (currency !== "NGN" || kobo !== row.amount * 100) {
+    console.warn("[pay] amount mismatch", ref, kobo, currency);
+    await env.DB.prepare("UPDATE payments SET status = 'mismatch' WHERE ref = ? AND status <> 'paid'").bind(ref).run();
+    return "mismatch";
+  }
+  // the webhook and the advertiser's return can arrive together: only one of them settles it
+  const won = await env.DB.prepare("UPDATE payments SET status = 'paid', paid_at = ?, channel = ? WHERE ref = ? AND status <> 'paid' RETURNING ref")
+    .bind(Date.now(), typeof channel === "string" ? channel.slice(0, 20) : null, ref)
+    .first();
+  if (!won) return "paid";
+  const settings = (await readDoc(env, "adsettings/main")) ?? {};
+  if (settings.autoPublish === true) await publishPaid(env, ctx, row.uid, row.sub_id, row.hunt_case, row.amount, settings);
+  return "paid";
+}
+
+const waDigits = (phone: string) => {
+  const d = phone.replace(/\D/g, "");
+  return d.startsWith("234") ? d : d.startsWith("0") ? `234${d.slice(1)}` : d;
+};
+
+/** Put a paid poster up (the owner chose not to review first): what the Ad manager's Approve does. */
+async function publishPaid(env: Env, ctx: { waitUntil(p: Promise<unknown>): void }, uid: string, subId: string, huntCase: string | null, paid: number, settings: Record<string, any>) {
+  const path = `adsubmit/${uid}/posters/${subId}`;
+  const sub = await readDoc(env, path);
+  if (!sub || sub.status !== "pending") return;
+  // changed after paying (more weeks, more boards)? Leave it for the owner to look at
+  if (adPrice(settings, sub) > paid) return;
+  const now = Date.now();
+  const weeks = Math.max(1, Math.min(52, Math.round(Number(sub.weeks) || 1)));
+  const end = now + weeks * WEEK_MS;
+  const text = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : undefined);
+  const phone = sub.whatsapp === true && typeof sub.phone === "string" ? waDigits(sub.phone) : undefined;
+  const live = {
+    business: text(sub.business, 60),
+    placement: sub.placement,
+    city: text(sub.city, 20),
+    image: sub.image,
+    start: now,
+    end,
+    count: Math.max(1, Math.min(20, Math.round(Number(sub.count) || 1))),
+    website: text(sub.website, 220),
+    blurb: text(sub.blurb, 140),
+    phone,
+  };
+  await writeDoc(env, ctx, `adlive/${subId}`, await storeImages(env, ["adlive"], live));
+  const hunt = sub.hunt && typeof sub.hunt === "object" ? sub.hunt : null;
+  if (hunt && huntCase) {
+    const doc = { brand: live.business, offer: text(hunt.offer, 90), code: text(hunt.code, 24), tokens: hunt.tokens, image: sub.image, placement: sub.placement, city: live.city, caseId: huntCase, website: live.website, phone, start: now, end };
+    await writeDoc(env, ctx, `hunts/${subId}`, await storeImages(env, ["hunts"], doc));
+  }
+  await writeDoc(env, ctx, path, { ...sub, status: "live", liveUntil: end });
 }
 
 /* ---------------------------------------------------------------- reminders (Web Push) */

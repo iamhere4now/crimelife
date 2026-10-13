@@ -8,6 +8,7 @@
 //                          poster images are kept inside the database.
 //   - owner password:     `npx wrangler secret put ADMIN_KEY`
 //   - optional AI:        `npx wrangler secret put ANTHROPIC_API_KEY`
+//   - optional payments:  `npx wrangler secret put PAYSTACK_SECRET_KEY` (webhook: /api/pay/webhook)
 {
   "name": "crimelife",
   "main": "worker/index.ts",
