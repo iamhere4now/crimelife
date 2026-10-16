@@ -22,6 +22,7 @@
  */
 
 import { DurableObject } from "cloudflare:workers";
+import { maskRude, safeName } from "../src/lib/clean";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type D1 = {
@@ -77,6 +78,9 @@ function schema(env: Env) {
       "CREATE TABLE IF NOT EXISTS payments (ref TEXT PRIMARY KEY, uid TEXT NOT NULL, sub_id TEXT NOT NULL, amount INTEGER NOT NULL, email TEXT NOT NULL, hunt_case TEXT, status TEXT NOT NULL, created INTEGER NOT NULL, paid_at INTEGER, channel TEXT)",
     ).bind(),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS payments_uid ON payments(uid)").bind(),
+    env.DB.prepare(
+      "CREATE TABLE IF NOT EXISTS reports (id INTEGER PRIMARY KEY AUTOINCREMENT, uid TEXT NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL, context TEXT, created INTEGER NOT NULL, done INTEGER NOT NULL DEFAULT 0)",
+    ).bind(),
   ]).catch((e) => {
     ready = null;
     throw e;
@@ -226,11 +230,24 @@ const MAX_OWN_DOCS: Record<string, number> = { adsubmit: 40, data: 20 };
 
 const clampNum = (v: unknown, lo: number, hi: number) => (typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : lo);
 
-/** Leaderboard rows are written by players, so keep them within what the game can reach. */
+/**
+ * Public rows are written by players: keep leaderboard numbers within what the game
+ * can reach, and mask insults in names and chat before anyone else can read them.
+ */
 function tidy(seg: string[], data: Record<string, unknown>, owner: boolean) {
-  if (owner || seg[0] !== "board") return data;
+  if (owner) return data;
+  if (seg[0] === "chat") {
+    const msgs = Array.isArray(data.msgs) ? data.msgs : [];
+    return {
+      ...data,
+      name: typeof data.name === "string" ? safeName(data.name) : data.name,
+      msgs: msgs.map((m) => (m && typeof m === "object" && typeof (m as { text?: unknown }).text === "string" ? { ...m, text: maskRude((m as { text: string }).text) } : m)),
+    };
+  }
+  if (seg[0] !== "board") return data;
   return {
     ...data,
+    name: typeof data.name === "string" ? safeName(data.name) : data.name,
     balance: clampNum(data.balance, -100_000_000, 2_000_000_000),
     rating: clampNum(data.rating, 0, 5),
     xp: clampNum(data.xp, 0, 50_000),
@@ -258,6 +275,12 @@ async function api(req: Request, env: Env, ctx: { waitUntil(p: Promise<unknown>)
   const route = url.pathname.replace(/^\/api\//, "");
 
   if (route === "health") return json({ ok: true, media: !!env.MEDIA, ask: !!env.ANTHROPIC_API_KEY, pay: !!env.PAYSTACK_SECRET_KEY });
+
+  // the owner's support contact (Ad manager settings), for the privacy and terms pages
+  if (route === "contact") {
+    const s = await readDoc(env, "adsettings/main");
+    return json({ support: typeof s?.support === "string" ? s.support.slice(0, 160) : "" });
+  }
 
   // Paystack tells us about payments here; the signature proves it's them
   if (route === "pay/webhook" && req.method === "POST") return payWebhook(req, env, ctx);
@@ -345,6 +368,15 @@ async function api(req: Request, env: Env, ctx: { waitUntil(p: Promise<unknown>)
       await env.DB.prepare("INSERT INTO push_jobs (kind, title, body, created) VALUES ('owner', ?, ?, ?)").bind(title, text, Date.now()).run();
       return json({ ok: true });
     }
+    if (route === "admin/reports") {
+      const rows = await env.DB.prepare("SELECT id, uid, kind, text, context, created, done FROM reports ORDER BY done, id DESC LIMIT 200").bind().all();
+      return json({ reports: rows.results });
+    }
+    if (route === "admin/report-done" && req.method === "POST") {
+      const body = (await req.json().catch(() => ({}))) as { id?: unknown };
+      await env.DB.prepare("UPDATE reports SET done = 1 WHERE id = ?").bind(Number(body.id) || 0).run();
+      return json({ ok: true });
+    }
     if (route === "admin/payments") {
       const rows = await env.DB.prepare("SELECT ref, uid, sub_id, amount, status, paid_at, channel FROM payments WHERE status IN ('paid', 'mismatch') ORDER BY created DESC LIMIT 500").bind().all();
       return json({ payments: rows.results, enabled: !!env.PAYSTACK_SECRET_KEY });
@@ -409,6 +441,44 @@ async function api(req: Request, env: Env, ctx: { waitUntil(p: Promise<unknown>)
 
   /* ---- paying for a poster */
   if (route.startsWith("pay/")) return pay(route, req, env, ctx, who.uid, url.origin);
+
+  /* ---- "Report a problem" (players to the owner console) */
+  if (route === "report" && req.method === "POST") {
+    if (!(await allow(env, `report:${who.uid}`, 10, 86_400_000))) return fail("rate_limited", 429);
+    const body = (await req.json().catch(() => ({}))) as { kind?: unknown; text?: unknown; context?: unknown };
+    const kind = ["bug", "player", "payment", "idea", "other"].includes(String(body.kind)) ? String(body.kind) : "other";
+    const text = typeof body.text === "string" ? body.text.trim().slice(0, 1000) : "";
+    if (text.length < 5) return fail("invalid_argument", 400);
+    const context = typeof body.context === "string" ? body.context.slice(0, 600) : "";
+    await env.DB.prepare("INSERT INTO reports (uid, kind, text, context, created) VALUES (?, ?, ?, ?, ?)").bind(who.uid, kind, text, context, Date.now()).run();
+    return json({ ok: true });
+  }
+
+  /* ---- "Delete my account": everything this player made, gone (payment records stay, by law) */
+  if (route === "account/delete" && req.method === "POST") {
+    if (!(await allow(env, `delete:${who.uid}`, 10, 3_600_000))) return fail("rate_limited", 429);
+    const body = (await req.json().catch(() => ({}))) as { password?: unknown };
+    const acc = await env.DB.prepare("SELECT pw_hash, salt, iters FROM accounts WHERE uid = ?").bind(who.uid).first<{ pw_hash: string; salt: string; iters: number }>();
+    // with a password set, a borrowed phone isn't enough: ask for it again
+    if (acc && (typeof body.password !== "string" || !sameText(await hashPassword(body.password, unb64(acc.salt), acc.iters), acc.pw_hash))) return fail("wrong_login", 401);
+    const uid = who.uid;
+    // their posters: take down any live ones too
+    const subs = await env.DB.prepare("SELECT id FROM docs WHERE parent = ?").bind(`adsubmit/${uid}/posters`).all<{ id: string }>();
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM docs WHERE path LIKE ? ESCAPE '\\'").bind(`${likeEscape(`data/users/${uid}`)}/%`),
+      env.DB.prepare("DELETE FROM docs WHERE path = ? OR path LIKE ? ESCAPE '\\'").bind(`adsubmit/${uid}`, `${likeEscape(`adsubmit/${uid}`)}/%`),
+      ...["board", "chat", "adstats", "signups"].map((c) => env.DB.prepare("DELETE FROM docs WHERE path = ?").bind(`${c}/${uid}`)),
+      ...subs.results.flatMap((s) => [env.DB.prepare("DELETE FROM docs WHERE path = ?").bind(`adlive/${s.id}`), env.DB.prepare("DELETE FROM docs WHERE path = ?").bind(`hunts/${s.id}`)]),
+      env.DB.prepare("DELETE FROM push_subs WHERE uid = ?").bind(uid),
+      env.DB.prepare("DELETE FROM reports WHERE uid = ?").bind(uid),
+      env.DB.prepare("DELETE FROM sessions WHERE uid = ?").bind(uid),
+      env.DB.prepare("DELETE FROM accounts WHERE uid = ?").bind(uid),
+      env.DB.prepare("DELETE FROM players WHERE uid = ?").bind(uid),
+      env.DB.prepare("DELETE FROM tickets WHERE uid = ?").bind(uid),
+    ]);
+    for (const c of ["board", "chat", "adlive", "hunts"]) notify(env, ctx, c);
+    return json({ ok: true });
+  }
 
   /* ---- reminders on this device */
   if (route === "push/subscribe" && req.method === "POST") {
@@ -907,6 +977,15 @@ export default {
     ctx.waitUntil(
       (async () => {
         await schema(env);
+        // once an hour: forget expired rate-limit counters (they hold IP addresses), tickets, and reports over a year old
+        if (new Date(event.scheduledTime).getUTCMinutes() === 0) {
+          const now = Date.now();
+          await env.DB.batch([
+            env.DB.prepare("DELETE FROM limits WHERE reset < ?").bind(now),
+            env.DB.prepare("DELETE FROM tickets WHERE exp < ?").bind(now),
+            env.DB.prepare("DELETE FROM reports WHERE created < ?").bind(now - 365 * 86_400_000),
+          ]);
+        }
         await queueDailyReminder(env, event.scheduledTime);
         await sendPushBatch(env, event.scheduledTime);
       })().catch((e) => console.error("[cron]", e)),

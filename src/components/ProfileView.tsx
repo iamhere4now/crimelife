@@ -1,6 +1,7 @@
 "use client";
 
-import { ChevronRight, Flame, Lock, LogOut, Megaphone, Shirt, Volume2, VolumeX } from "lucide-react";
+import { ChevronRight, Flag, Flame, Lock, LogOut, Megaphone, Shirt, Volume2, VolumeX } from "lucide-react";
+import { useState } from "react";
 import { BADGES } from "@/lib/badges";
 import { UNLOCKS, rankName } from "@/lib/unlocks";
 import { CASES } from "@/lib/cases";
@@ -9,6 +10,8 @@ import { LOSS_LIMIT, RANKS, rankFor, rankIndex, rankProgress, XP_ARREST, XP_LIE,
 import type { Face, GameState } from "@/lib/types";
 import { AccountCard } from "./AccountCard";
 import { AppSettings } from "./AppSettings";
+import { LegalLinks } from "./LegalLinks";
+import { ReportProblem } from "./ReportProblem";
 import { Avatar } from "./Avatar";
 import { Insignia } from "./RankViews";
 import { Stars } from "./ui";
@@ -31,6 +34,7 @@ export function ProfileView({ state, name, face, onToggleMute, onSwitch, onAdver
   const rank = rankFor(state.xp);
   const current = rankIndex(state.xp);
   const next = RANKS[current + 1];
+  const [reporting, setReporting] = useState(false);
 
   return (
     <div className="px-4 pt-5">
@@ -192,8 +196,13 @@ export function ProfileView({ state, name, face, onToggleMute, onSwitch, onAdver
         <button onClick={onSwitch} className="flex w-full items-center gap-3 p-4 text-left font-semibold">
           <LogOut className="size-5 text-kick" /> Switch detective (sign in or sign up)
         </button>
+        <button onClick={() => setReporting(true)} className="flex w-full items-center gap-3 p-4 text-left font-semibold">
+          <Flag className="size-5 text-danger" /> Report a problem
+        </button>
       </div>
+      {reporting && <ReportProblem onClose={() => setReporting(false)} />}
       <p className="mt-4 text-center text-xs text-muted">Progress saves automatically.</p>
+      <LegalLinks className="mt-1 pb-2" />
     </div>
   );
 }

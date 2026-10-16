@@ -32,7 +32,8 @@ self.addEventListener("fetch", (e) => {
   if (url.origin !== self.location.origin || url.pathname.startsWith("/api/")) return;
 
   // the game page: network first, the saved copy when offline
-  if (req.mode === "navigate") {
+  // (other pages, like /privacy and /terms, load normally)
+  if (req.mode === "navigate" && url.pathname === "/") {
     e.respondWith(
       (async () => {
         try {

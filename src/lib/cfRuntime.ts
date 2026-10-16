@@ -127,6 +127,25 @@ export async function accountLogout() {
   authPromise = null;
 }
 
+/**
+ * Delete this player and everything they made on the server (password needed when
+ * one is set), then wipe this device's copy. Payment records are kept, as the law requires.
+ */
+export async function accountDelete(password?: string): Promise<AccountError | null> {
+  try {
+    await call("/api/account/delete", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password }) });
+  } catch (e) {
+    return errCode(e);
+  }
+  try {
+    for (const k of Object.keys(window.localStorage)) if (k.startsWith("crime-life:") || k.startsWith("nd:")) window.localStorage.removeItem(k);
+  } catch {
+    // nothing left to clear
+  }
+  authPromise = null;
+  return null;
+}
+
 export async function accountChangePassword(old: string, password: string): Promise<AccountError | null> {
   try {
     const r = (await call("/api/account/password", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ old, password }) })) as { token?: string };

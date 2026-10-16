@@ -7,7 +7,7 @@
 //
 // The API (/api/...) is never cached.
 
-const VERSION = "de32a8d484ea";
+const VERSION = "ce06c0a42442";
 const CACHE = `nd-${VERSION}`;
 const SHELL = ["/", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/badge-96.png"];
 
@@ -32,7 +32,8 @@ self.addEventListener("fetch", (e) => {
   if (url.origin !== self.location.origin || url.pathname.startsWith("/api/")) return;
 
   // the game page: network first, the saved copy when offline
-  if (req.mode === "navigate") {
+  // (other pages, like /privacy and /terms, load normally)
+  if (req.mode === "navigate" && url.pathname === "/") {
     e.respondWith(
       (async () => {
         try {

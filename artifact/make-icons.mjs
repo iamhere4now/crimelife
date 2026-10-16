@@ -29,3 +29,7 @@ const badge = Buffer.from(
 );
 await sharp(badge, { density: 300 }).resize(96, 96).png().toFile(resolve(out, "badge-96.png"));
 console.log("wrote badge-96.png");
+
+// the link-preview card for WhatsApp, X and Facebook (1200 × 630)
+await sharp(readFileSync(resolve(root, "artifact/og.svg"))).png({ compressionLevel: 9 }).toFile(resolve(root, "cloudflare/og.png"));
+console.log("wrote og.png");

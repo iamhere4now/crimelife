@@ -8,6 +8,8 @@
  * build the tabs on this computer talk over a BroadcastChannel instead.
  */
 
+import { safeName } from "./clean";
+
 /** The published game, for invites. */
 export const GAME_URL = "https://claude.ai/artifact/SqZf6mfG9T1ajNERQnCYhh";
 
@@ -81,7 +83,7 @@ const idOk = (v: unknown): v is string => typeof v === "string" && /^[a-z0-9][a-
 
 function partnerOf(key: string, p: Presence, guest: boolean): Partner | null {
   if (p.v !== 1) return null;
-  const name = clean(p.n, 22);
+  const name = safeName(clean(p.n, 22));
   if (!name) return null;
   const look = typeof p.l === "number" && Number.isFinite(p.l) ? Math.max(0, Math.min(11, Math.floor(p.l))) : 0;
   const found = Array.isArray(p.f) ? p.f.filter(idOk).slice(0, 24) : [];

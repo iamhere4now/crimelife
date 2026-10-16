@@ -7,6 +7,8 @@
  * Outside claude.ai the leaderboard is just you and stats stay in this browser.
  */
 
+import { safeName } from "./clean";
+
 type Unsub = () => void;
 type Snap = { id: string; exists: boolean; data(): Record<string, unknown> | undefined };
 type DocRef = { set(data: Record<string, unknown>): Promise<void>; get(): Promise<Snap> };
@@ -117,7 +119,7 @@ export function watchBoard(cb: (rows: BoardRow[] | null) => void): Unsub {
             .map((d) => {
               const v = d.data();
               if (!v) return null;
-              const name = str(v.name, 24);
+              const name = safeName(str(v.name, 24));
               if (!name) return null;
               return {
                 id: d.id,

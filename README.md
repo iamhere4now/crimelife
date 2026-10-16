@@ -58,6 +58,15 @@ The Ad manager opens only from the Owner console. Players never see an owner sig
 - **Lite mode** (`src/lib/lite.ts`): Profile › App & data. It shows drawn scenes instead of 3D and turns off the street recording. It switches on by itself when the phone's Data Saver is on, unless the player has chosen.
 - Icons: edit `artifact/icon.svg`, then run `node artifact/make-icons.mjs`.
 
+**Launch pack** (run by Bamdalas):
+- **Privacy Policy and Terms of Use:** `cloudflare/privacy.html` and `cloudflare/terms.html`, at `/privacy` and `/terms`. They're linked from sign-up and the bottom of Profile. The contact line fills in from your **Support contact** in the Ad manager (via `/api/contact`), so set it. Have a lawyer look them over when you can.
+- **Delete my account** (Profile › Account): asks for the password when there is one. It removes the player's saves, leaderboard row, chat, posters (live ones too), sign-up, reports, reminders and sessions. Payment records stay (tax law).
+- **Report a problem** (Profile): reports land in the Owner console under **Reports from players**. Players also get a WhatsApp button when your support contact is a phone number.
+- **Name and chat filter** (`src/lib/clean.ts`): refuses rude detective names at sign-up. The Worker masks insults and slurs (English, Pidgin, Yoruba, Igbo, Hausa) in chat and leaderboard names before they're stored, so a changed app can't skip it. Add words to the lists there.
+- **Link previews:** `cloudflare/og.png` (from `artifact/og.svg`). Set the build variable **SITE_URL** (e.g. `https://naijadetective.ng`) so WhatsApp gets a full picture address.
+- **Visitor counts:** Cloudflare › Web Analytics › add a site, copy the token, and set the build variable **CF_BEACON_TOKEN**.
+- The cron also clears expired rate-limit counters (they hold IP addresses) every hour, and reports after a year.
+
 **Paystack payments for posters** (`src/lib/pay.ts`, `worker/index.ts` › Paystack):
 - **Turn it on:** `npx wrangler secret put PAYSTACK_SECRET_KEY` (use `sk_test_...` to try it, `sk_live_...` for real money). In the Paystack dashboard › Settings › API Keys & Webhooks, set the **Webhook URL** to `https://<your game>/api/pay/webhook`.
 - **The advertiser's side:** after sending a poster they get **Pay ₦… now** (card, bank transfer or USSD on Paystack's page). It's also under My posters for any poster not yet paid. Afterwards Paystack sends them back to the game, which checks the payment and shows "Paid ✓ · being checked".

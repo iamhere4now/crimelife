@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <!-- The link-preview card (WhatsApp, X, Facebook). `node artifact/make-icons.mjs` makes cloudflare/og.png from it. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2f6bff"/>
+      <stop offset="1" stop-color="#1b3fb8"/>
+    </linearGradient>
+    <clipPath id="lens"><circle cx="905" cy="290" r="150"/></clipPath>
+    <pattern id="tape" x="0" y="530" width="210" height="44" patternUnits="userSpaceOnUse">
+      <rect width="210" height="44" fill="#f5c518"/>
+      <text x="14" y="30" font-family="Arial Black, Arial, sans-serif" font-size="20" font-weight="900" fill="#14161b">DO NOT CROSS ●</text>
+    </pattern>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <circle cx="1120" cy="60" r="220" fill="#fff" opacity="0.07"/>
+  <circle cx="80" cy="600" r="200" fill="#fff" opacity="0.06"/>
+
+  <!-- the magnifying glass over the flag -->
+  <g clip-path="url(#lens)">
+    <rect x="755" y="140" width="100" height="300" fill="#008751"/>
+    <rect x="855" y="140" width="100" height="300" fill="#ffffff"/>
+    <rect x="955" y="140" width="100" height="300" fill="#008751"/>
+  </g>
+  <circle cx="905" cy="290" r="150" fill="none" stroke="#fff" stroke-width="36"/>
+  <path d="M1015 400 L1120 505" stroke="#fff" stroke-width="56" stroke-linecap="round"/>
+  <path d="M1023 408 L1112 497" stroke="#f5c518" stroke-width="26" stroke-linecap="round"/>
+  <path d="M822 230 A100 100 0 0 1 882 186" fill="none" stroke="#fff" stroke-width="16" stroke-linecap="round" opacity="0.85"/>
+
+  <!-- words -->
+  <text x="72" y="150" font-family="Segoe UI, Arial, sans-serif" font-size="30" font-weight="700" fill="#ffffff" opacity="0.8" letter-spacing="4">FREE DETECTIVE GAME</text>
+  <text x="68" y="250" font-family="Arial Black, Segoe UI Black, Arial, sans-serif" font-size="92" font-weight="900" fill="#ffffff">Naija</text>
+  <text x="68" y="350" font-family="Arial Black, Segoe UI Black, Arial, sans-serif" font-size="92" font-weight="900" fill="#ffffff">Detective</text>
+  <text x="72" y="418" font-family="Segoe UI, Arial, sans-serif" font-size="34" font-weight="600" fill="#ffffff" opacity="0.92">Crack crime scenes in all 36 states + FCT.</text>
+  <text x="72" y="462" font-family="Segoe UI, Arial, sans-serif" font-size="34" font-weight="600" fill="#ffffff" opacity="0.92">Find the clues. Break the lies. Make the arrest.</text>
+
+  <!-- crime-scene tape across the bottom -->
+  <rect x="-40" y="530" width="1300" height="44" fill="url(#tape)" transform="rotate(-2 600 552)"/>
+</svg>

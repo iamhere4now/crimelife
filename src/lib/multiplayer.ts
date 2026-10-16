@@ -8,6 +8,7 @@
  */
 
 import type { CaseId } from "./types";
+import { maskRude, safeName } from "./clean";
 
 type Unsub = () => void;
 type Snap = { id: string; exists: boolean; data(): Record<string, unknown> | undefined };
@@ -145,10 +146,10 @@ export function connectChat(): Promise<Chat | null> {
                   id: `${d.id}:${clean(m.id, 40)}`,
                   at: m.at,
                   ch: m.ch,
-                  text: clean(m.text, MAX_TEXT),
+                  text: maskRude(clean(m.text, MAX_TEXT)),
                   caseId: typeof m.caseId === "string" ? (m.caseId as CaseId) : undefined,
                   by: d.id,
-                  name: clean(data.name, 32) || "Detective",
+                  name: safeName(clean(data.name, 32)) || "Detective",
                   look: typeof data.look === "number" ? data.look : 0,
                   rank: clean(data.rank, 8),
                   mine: d.id === myId,
@@ -163,7 +164,7 @@ export function connectChat(): Promise<Chat | null> {
       },
       send(me, msg) {
         const run = async (): Promise<"ok" | "read_only" | "failed"> => {
-          const entry: StoredMsg = { id: Math.random().toString(36).slice(2, 10), at: Date.now(), ch: msg.ch, text: clean(msg.text, MAX_TEXT) };
+          const entry: StoredMsg = { id: Math.random().toString(36).slice(2, 10), at: Date.now(), ch: msg.ch, text: maskRude(clean(msg.text, MAX_TEXT)) };
           if (msg.caseId) entry.caseId = msg.caseId;
           const next = [...mine, entry].slice(-KEEP_PER_PLAYER);
           try {

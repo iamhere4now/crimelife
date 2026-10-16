@@ -11,6 +11,8 @@ import type { DetectiveProfile } from "@/lib/types";
 import { Avatar } from "./Avatar";
 import { DOOR_BLUE, Doodles, Onboarding } from "./Onboarding";
 import { BrandMark } from "./ui";
+import { isRude } from "@/lib/clean";
+import { LegalLinks } from "./LegalLinks";
 
 interface Props {
   profiles: DetectiveProfile[];
@@ -47,7 +49,9 @@ export function Welcome({ profiles, onSignUp, onSignIn, onGuest }: Props) {
   const [error, setError] = useState("");
   const pwOk = !cloud || (password.length >= 8 && password.length <= 128);
   const pwMatch = !cloud || password === password2;
-  const ready = !!trimmed && fullOk && emailOk && pwOk && pwMatch && !busy;
+  // other players see the detective name: no insults or slurs
+  const nameRude = isRude(trimmed, true);
+  const ready = !!trimmed && !nameRude && fullOk && emailOk && pwOk && pwMatch && !busy;
   // signing in with email and password
   const [inEmail, setInEmail] = useState("");
   const [inPassword, setInPassword] = useState("");
@@ -222,11 +226,12 @@ export function Welcome({ profiles, onSignUp, onSignIn, onGuest }: Props) {
             className="h-14 rounded-full text-[16px] font-bold text-white shadow-[0_12px_24px_-12px_rgba(36,87,230,0.8)] transition enabled:active:scale-[0.98] disabled:opacity-45 disabled:shadow-none"
             style={{ background: DOOR_BLUE }}
           >
-            {busy ? "Creating your account…" : ready ? `Oya, join Panti as Constable ${trimmed.split(" ")[0]}!` : !fullOk ? "Type your full name first" : !emailOk ? "Add your email" : !pwOk ? "Choose a password (8+ characters)" : !pwMatch ? "Passwords must match" : "Pick a detective name"}
+            {busy ? "Creating your account…" : ready ? `Oya, join Panti as Constable ${trimmed.split(" ")[0]}!` : !fullOk ? "Type your full name first" : !emailOk ? "Add your email" : !pwOk ? "Choose a password (8+ characters)" : !pwMatch ? "Passwords must match" : nameRude ? "Pick a different detective name" : "Pick a detective name"}
           </button>
           <p className="text-center text-[11px] leading-snug text-muted">
             Your full name and email are private: other players only see your detective name. The game&apos;s owner may email you about Naija Detective. We don&apos;t share them.
           </p>
+          <LegalLinks prefix="By joining you agree to the" />
           {error && <p className="rounded-xl bg-danger/10 px-3 py-2 text-center text-xs font-semibold text-danger">{error}</p>}
           <p className="text-center text-xs text-muted">
             You start as a Constable with {moneyShort(250_000)}.{" "}

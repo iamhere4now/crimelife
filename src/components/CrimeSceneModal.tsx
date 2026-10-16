@@ -3,7 +3,8 @@
 import { Brush, Check, Heart, MessageCircle, Moon, Share2, Sun, ChevronLeft, ChevronUp, Eye, Siren, FlaskConical, Gavel, HelpCircle, Microscope, Music, Puzzle, Search, Star, Timer, Users, Volume2, VolumeX, Wallet, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BONUS_REWARD, bonusFor, bonusTheme, type BonusFind } from "@/lib/bonus";
-import { GAME_URL, joinCase, type CoopMe, type CoopSession, type Partner } from "@/lib/coop";
+import { joinCase, type CoopMe, type CoopSession, type Partner } from "@/lib/coop";
+import { gameLink } from "@/lib/shareCard";
 import { LANG_NAME, langOf, leadLine, phrasesFor, phraseText } from "@/lib/local";
 import { confetti } from "@/lib/confetti";
 import { decodeFace, detectiveLook } from "@/lib/looks";
@@ -284,7 +285,7 @@ export function CrimeSceneModal({
   /** Ask a detective from another branch to join this case. */
   const invite = async () => {
     sfx.tap();
-    const text = `Join me on "${theCase.title}" in Naija Detective. I'm on the scene now in ${regionOf(theCase).state}. Open the game and pick this case: ${GAME_URL}`;
+    const text = `Join me on "${theCase.title}" in Naija Detective. I'm on the scene now in ${regionOf(theCase).state}. Open the game and pick this case: ${gameLink()}`;
     try {
       if (navigator.share) {
         await navigator.share({ title: "Naija Detective", text });

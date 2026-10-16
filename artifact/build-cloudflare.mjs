@@ -19,6 +19,32 @@ const out = resolve(root, "cloudflare/index.html");
 execFileSync(process.execPath, [resolve(root, "artifact/build.mjs"), raw], { stdio: "inherit", env: { ...process.env, ND_ENTRY: "artifact/main-cloudflare.tsx" } });
 
 const body = readFileSync(raw, "utf8").replace(/^<meta charset="utf-8">\s*/i, "");
+
+// Optional build settings (Cloudflare › Workers › Settings › Build › Variables):
+//   SITE_URL         the game's address, e.g. https://naijadetective.ng, so link previews
+//                    (WhatsApp, X, Facebook) get a full picture address
+//   CF_BEACON_TOKEN  Cloudflare Web Analytics token (cookieless visitor counts)
+const site = (process.env.SITE_URL ?? "").trim().replace(/\/+$/, "");
+const beacon = (process.env.CF_BEACON_TOKEN ?? "").trim();
+if (beacon && !/^[a-f0-9]{32}$/i.test(beacon)) throw new Error("CF_BEACON_TOKEN should be the 32-character token from Web Analytics");
+const title = "Naija Detective: crack crime scenes across Nigeria";
+const about = "Free detective game. Find the clues, break the lies and make the arrest in all 36 states and the FCT.";
+const share = [
+  `<meta property="og:type" content="website">`,
+  `<meta property="og:site_name" content="Naija Detective">`,
+  `<meta property="og:title" content="${title}">`,
+  `<meta property="og:description" content="${about}">`,
+  `<meta property="og:image" content="${site}/og.png">`,
+  `<meta property="og:image:width" content="1200">`,
+  `<meta property="og:image:height" content="630">`,
+  `<meta property="og:image:alt" content="Naija Detective: a magnifying glass over the Nigerian flag">`,
+  ...(site ? [`<meta property="og:url" content="${site}/">`, `<link rel="canonical" href="${site}/">`] : []),
+  `<meta name="twitter:card" content="summary_large_image">`,
+  `<meta name="twitter:title" content="${title}">`,
+  `<meta name="twitter:description" content="${about}">`,
+  `<meta name="twitter:image" content="${site}/og.png">`,
+  ...(beacon ? [`<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "${beacon}"}'></script>`] : []),
+];
 const head = [
   "<!doctype html>",
   '<html lang="en">',
@@ -33,6 +59,8 @@ const head = [
   '<meta name="apple-mobile-web-app-capable" content="yes">',
   '<meta name="mobile-web-app-capable" content="yes">',
   '<meta name="apple-mobile-web-app-title" content="Naija Detective">',
+  // link previews and visitor counts
+  ...share,
   "",
 ].join("\n");
 

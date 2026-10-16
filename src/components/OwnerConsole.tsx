@@ -143,6 +143,8 @@ export function OwnerConsole({ onClose, onAds, onGrant }: { onClose: () => void;
 
             <ResetPassword onDone={(t) => setNote(t)} />
 
+            <Reports act={act} />
+
             <Reminders push={over?.push} act={act} />
 
             {/* leaderboard moderation */}
@@ -348,6 +350,58 @@ function Reminders({ push, act }: { push?: Overview["push"]; act: (fn: () => Pro
           ))}
         </ul>
       )}
+    </section>
+  );
+}
+
+interface Report {
+  id: number;
+  uid: string;
+  kind: string;
+  text: string;
+  context: string | null;
+  created: number;
+  done: number;
+}
+
+const KIND_LABEL: Record<string, string> = { bug: "🐞 Bug", player: "🚩 Player", payment: "💳 Payment", idea: "💡 Idea", other: "✉️ Other" };
+
+/** What players sent from Profile › Report a problem. */
+function Reports({ act }: { act: (fn: () => Promise<unknown>, done: string) => Promise<void> }) {
+  const [list, setList] = useState<Report[] | null>(null);
+  const [round, setRound] = useState(0);
+  useEffect(() => {
+    (adminCall("reports") as Promise<{ reports: Report[] }>).then((r) => setList(r.reports), () => setList([]));
+  }, [round]);
+  const open = (list ?? []).filter((r) => !r.done);
+  return (
+    <section className="soft rounded-2xl bg-card p-3">
+      <h3 className="text-sm font-bold">📮 Reports from players ({open.length} new)</h3>
+      {!list ? (
+        <p className="mt-1 text-xs text-muted">Loading…</p>
+      ) : !list.length ? (
+        <p className="mt-1 text-xs text-muted">No reports yet.</p>
+      ) : (
+        <ul className="mt-2 max-h-96 divide-y divide-line overflow-y-auto text-xs">
+          {list.map((r) => (
+            <li key={r.id} className={`py-2 ${r.done ? "opacity-50" : ""}`}>
+              <div className="flex items-center gap-2">
+                <span className="font-bold">{KIND_LABEL[r.kind] ?? r.kind}</span>
+                <span className="text-muted">{new Date(r.created).toLocaleString()}</span>
+                <span className="font-mono text-[10px] text-muted">{r.uid}</span>
+                {!r.done && (
+                  <button onClick={() => void act(() => adminCall("report-done", { id: r.id }), "Marked as handled.").then(() => setRound((n) => n + 1))} className="ml-auto h-7 rounded-full border border-line px-2.5 font-bold">
+                    Handled
+                  </button>
+                )}
+              </div>
+              <p className="mt-1 whitespace-pre-wrap break-words">{r.text}</p>
+              {r.context && <p className="mt-0.5 truncate text-[10px] text-muted">{r.context}</p>}
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="mt-2 text-[10px] text-muted">To act on a player report, find them by name in the leaderboard or chat lists below and remove or ban.</p>
     </section>
   );
 }
